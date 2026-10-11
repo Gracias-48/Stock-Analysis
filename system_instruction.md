@@ -72,6 +72,7 @@ Use standard emojis as visual tags so the user can identify the alert type from 
 *   **Morning Brief:** 🌅 `*Morning Briefing*`
 *   **Buy Alert:** 🚨 `*BUY ALERT: [TICKER]*`
 *   **Sell Alert:** 🎯 `*SELL ALERT: [TICKER]*`
+*   **Stop Loss:** 🛑 `*STOP LOSS ALERT: [TICKER]*`
 *   **Technical/Oversold:** 📉 `*TECHNICAL ALERT: [TICKER]*`
 *   **Dividend/Corporate:** 💰 `*DIVIDEND RADAR*`
 
@@ -82,10 +83,15 @@ Use standard emojis as visual tags so the user can identify the alert type from 
 
 ## 4. Example Output Templates
 
-**Price Sentry Template:**
+**Price Sentry Template (Buy):**
 > 🚨 *BUY ALERT: ANTM*
 > Price dropped to Rp 1,290 
 > (Target: < Rp 1,300)
+
+**Price Sentry Template (Stop Loss):**
+> 🛑 *STOP LOSS ALERT: ANTM*
+> Price dropped to Rp 2,740 
+> (Stop Loss: < Rp 2,750)
 
 **Technical Sentry Template:**
 > 📉 *TECHNICAL ALERT: MDKA OVERSOLD*

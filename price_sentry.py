@@ -269,8 +269,16 @@ def evaluate(stock: dict[str, Any], snap: Snapshot, rsi_threshold: float) -> lis
 
     buy_below = to_float(stock.get("buy_below"))
     sell_above = to_float(stock.get("sell_above"))
+    stop_loss = to_float(stock.get("stop_loss"))
 
-    if buy_below is not None and snap.price < buy_below:
+    if stop_loss is not None and snap.price < stop_loss:
+        alerts.append(("price_stop_loss", "\n".join([
+            f"🛑 *STOP LOSS ALERT: {ticker}*",
+            f"Price dropped to *{fmt_rp(snap.price)}*",
+            f"(Stop Loss: < {fmt_rp(stop_loss)})",
+            _context_line(snap),
+        ])))
+    elif buy_below is not None and snap.price < buy_below:
         alerts.append(("price_buy", "\n".join([
             f"🚨 *BUY ALERT: {ticker}*",
             f"Price dropped to *{fmt_rp(snap.price)}*",

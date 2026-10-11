@@ -462,10 +462,11 @@ def build_prompt(now: datetime, macro: dict[str, dict[str, Any]],
     lines += ["", "WATCHLIST (diferensial volume 2 pekan = rerata vol 5H saat ini vs 5H sebelumnya):"]
     if stocks:
         for s in stocks:
+            sl_info = f" / stop loss {fmt_rp(s.get('stop_loss'))}" if s.get("stop_loss") else ""
             lines.append(
                 f"- {s['ticker']} [{s['sector']}] {s.get('name', '')}: harga {fmt_rp(s.get('close'))} "
                 f"({fmt_pct(s.get('change_pct'))} h/h) | batas beli {fmt_rp(s.get('buy_below'))} / "
-                f"batas jual {fmt_rp(s.get('sell_above'))} | Rerata vol 5H {fmt_volume(s.get('vol_ma'))} vs 5H sebelumnya "
+                f"batas jual {fmt_rp(s.get('sell_above'))}{sl_info} | Rerata vol 5H {fmt_volume(s.get('vol_ma'))} vs 5H sebelumnya "
                 f"{fmt_volume(s.get('vol_ma_prev'))} ({fmt_pct(s.get('vol_diff_pct'))})"
             )
     else:

@@ -62,7 +62,10 @@ $env:DRY_RUN = "1"; $env:FORCE_RUN = "1"
 
 ## Customizing the watchlist
 
-Edit `watchlist.json`. Each entry needs `ticker`, `sector`, `buy_below`, and `sell_above`.
+Edit `watchlist.json`. Each entry supports `ticker`, `sector`, `buy_below`, `sell_above`, and `stop_loss`.
+- `buy_below`: triggers 🚨 `BUY ALERT` when price drops below target.
+- `sell_above`: triggers 🎯 `SELL ALERT` (take profit) when price rises above target.
+- `stop_loss`: triggers 🛑 `STOP LOSS ALERT` when price drops below stop loss (suppresses buy alert).
 The global RSI oversold level is `_meta.rsi_oversold` (default `30`).
 
 ## How alerts stay de-duplicated

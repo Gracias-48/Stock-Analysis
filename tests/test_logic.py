@@ -41,6 +41,24 @@ class AlertRulesTest(unittest.TestCase):
         stock = {"ticker": "X", "buy_below": None, "sell_above": "bad"}
         self.assertEqual(ps.evaluate(stock, snap, 30), [])
 
+    def test_stop_loss_fires_and_suppresses_buy_alert(self) -> None:
+        stock = {"ticker": "ANTM", "buy_below": 2900, "sell_above": 3500, "stop_loss": 2750}
+        snap = ps.Snapshot(price=2700.0, rsi=25.0, sma=3000.0, bar_date=date(2026, 10, 12))
+        alerts = dict(ps.evaluate(stock, snap, 30))
+
+        self.assertEqual(set(alerts), {"price_stop_loss", "rsi_oversold"})
+        self.assertTrue(alerts["price_stop_loss"].startswith(
+            "🛑 *STOP LOSS ALERT: ANTM*\nPrice dropped to *Rp 2,700*\n(Stop Loss: < Rp 2,750)"))
+
+    def test_buy_fires_when_above_stop_loss_but_below_buy_below(self) -> None:
+        stock = {"ticker": "ANTM", "buy_below": 2900, "sell_above": 3500, "stop_loss": 2750}
+        snap = ps.Snapshot(price=2850.0, rsi=35.0, sma=3000.0, bar_date=date(2026, 10, 12))
+        alerts = dict(ps.evaluate(stock, snap, 30))
+
+        self.assertEqual(list(alerts), ["price_buy"])
+        self.assertTrue(alerts["price_buy"].startswith(
+            "🚨 *BUY ALERT: ANTM*\nPrice dropped to *Rp 2,850*\n(Target: < Rp 2,900)"))
+
 
 class AlertLogTest(unittest.TestCase):
     def setUp(self) -> None:
