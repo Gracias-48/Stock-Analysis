@@ -18,9 +18,9 @@
       "ticker": "ANTM",
       "name": "Aneka Tambang Tbk",
       "sector": "Metals & Mining",
-      "buy_below": 2900,
+      "buy_below": 3190,
       "sell_above": 3500,
-      "stop_loss": 2750
+      "stop_loss": 2950
     },
     {
       "ticker": "MDKA",
@@ -34,9 +34,9 @@
       "ticker": "DSSA",
       "name": "Dian Swastatika Sentosa Tbk",
       "sector": "Energy & Infrastructure",
-      "buy_below": 1000,
-      "sell_above": 1250,
-      "stop_loss": 950
+      "buy_below": 1130,
+      "sell_above": 1240,
+      "stop_loss": 1040
     },
     {
       "ticker": "CUAN",
@@ -50,9 +50,9 @@
       "ticker": "DEWA",
       "name": "Darma Henwa Tbk",
       "sector": "Energy (Coal & Mining)",
-      "buy_below": 334,
-      "sell_above": 420,
-      "stop_loss": 310
+      "buy_below": 360,
+      "sell_above": 400,
+      "stop_loss": 315
     }
   ]
 }
