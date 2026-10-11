@@ -127,11 +127,16 @@ def fmt_volume(value: float | None) -> str:
     return f"{value:,.0f}"
 
 
+DAYS_ID = ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+MONTHS_ID = (
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agt", "Sep", "Okt", "Nov", "Des"
+)
+
+
 def fmt_brief_date(d: datetime | date) -> str:
-    """'Oct 12, 2026' - locale independent."""
-    months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    return f"{months[d.month - 1]} {d.day}, {d.year}"
+    """'11 Okt 2026' - format tanggal Indonesia ringkas."""
+    return f"{d.day} {MONTHS_ID[d.month - 1]} {d.year}"
 
 
 def escape_md(text: str) -> str:
@@ -368,139 +373,144 @@ def fetch_dividend_radar(stocks: list[dict[str, Any]], today: date,
 # Gemini synthesis
 # --------------------------------------------------------------------------- #
 SYSTEM_INSTRUCTION = """\
-You are a senior institutional equity strategist covering the Indonesia Stock Exchange (IDX).
-You write a pre-market brief that is read on a phone lock screen via Telegram.
+Anda adalah Institutional Equity Strategist senior yang memantau Bursa Efek Indonesia (BEI / IDX).
+Tugas Anda adalah menyusun ringkasan pra-pembukaan pasar (pre-market brief) untuk dibaca cepat di Telegram (layar ponsel).
 
-Tone and voice:
-- Objective, institutional, concise. No greetings, sign-offs, disclaimers or conversational filler.
-- Action-oriented: name exact tickers, price levels and the direction of conviction.
+Gaya Bahasa & Nada:
+- Bahasa: SELALU tulis dalam Bahasa Indonesia yang profesional, ringkas, padat, dan institusional.
+- Tanpa basa-basi: Jangan gunakan salam pembuka/penutup, disclaimer, atau kalimat basa-basi.
+- Action-oriented: Sebutkan ticker saham, level harga, dan arah rekomendasi secara konkret.
 
-Grounding:
-- Use ONLY the market data and headlines supplied by the user. Never invent prices, numbers,
-  events or corporate actions. If a data point is "N/A", do not guess it.
-- Write in English, even though some headlines are in Bahasa Indonesia.
-- Currency must be written as Indonesian Rupiah with thousand separators, e.g. "Rp 4,500".
-  IHSG is an index level, not Rupiah (e.g. "7,200").
+Akurasi Data (Grounding):
+- Gunakan HANYA data pasar dan berita yang disediakan. Jangan pernah mengarang angka, harga, aksi korporasi, atau rumor. Jika data "N/A", abaikan.
+- Mata uang: tulis dalam format Rupiah, misal "Rp 3.100" atau "Rp 17.875".
+- IHSG adalah level indeks, misal "6.093,76".
 
-Formatting (Telegram legacy Markdown - strict):
-- Bold with SINGLE asterisks only: *text*. Never use double asterisks.
-- No '#' headings, no code blocks or backticks, no tables, no links, no underscores for emphasis.
-- Bullets start with "- ".
-- Separate sections with exactly one blank line.
+Format & Kerapian Tampilan (Mobile-Friendly & Tidy):
+- DILARANG membuat paragraf panjang yang padat (wall of text).
+- Di bagian Makro & Pasar, gunakan poin peluru (•) yang rapi agar mudah dibaca cepat (skimming).
+- Bold metrik kunci dan kode saham dengan SATU tanda bintang: *teks*. Jangan gunakan bintang ganda (**).
+- Bagian Katalis Saham: HANYA pilih 2 hingga 4 saham yang memiliki katalis/berita spesifik hari ini. JANGAN mencantumkan semua saham jika tidak ada berita atau sentimen signifikan! Tulis maksimal 1 kalimat padat per saham.
+- Dilarang menggunakan heading markdown (#), code blocks (```), tabel, link markdown, atau garis bawah (_).
+- Pisahkan setiap bagian utama dengan tepat 1 baris kosong.
 """
 
 BRIEF_TEMPLATE = """\
 🌅 *Morning Briefing - {date}*
 
-*Macro & Momentum:*
-<2-4 sentences: IHSG level and daily move; USD/IDR level and which sectors it helps or hurts;
-volume-flow read by sector (where accumulation is building vs. where volume is drying up).>
+*Makro & Pasar:*
+• *IHSG:* <level indeks> (<% pergerakan>) | <1 frasa ringkas pergerakan / tren volume>
+• *USD/IDR:* <kurs rupiah> (<% pergerakan>) — <1 kalimat ringkas dampak ke sektor ekspor vs impor>
+• *Likuiditas:* <1 kalimat ringkas sektor yang diakumulasi vs yang sepi volume>
 
-*Recommendation:*
-<sector emoji> *<Sector>.* <ONE explicit sector call. Name the 1-2 watchlist tickers to prioritize
-and the data-backed reason (price vs. buy/sell levels, volume trend, news).>
+*Rekomendasi Sektor:*
+<emoji sektor> *<Sektor> (<TICKER>)* — <Panggilan aksi jelas: Akumulasi / Hold / Profit Taking. Alasan data-backed: laba/valuasi, teknikal/volume, atau sentimen berita. Sebutkan harga saat ini vs level beli/jual.>
 
-*Key Catalysts:*
-- *TICKER:* <one-line catalyst drawn from the headlines or the price/volume data>
-<one bullet per watchlist ticker that has a relevant catalyst; maximum 6 bullets>
+*Katalis Saham:*
+- *<TICKER>:* <1 kalimat padat katalis utama dari berita atau pergerakan harga/volume>
+<PENTING: HANYA 2-4 saham dengan katalis nyata hari ini. Jangan daftarkan saham tanpa berita/katalis khusus!>
 """
 
 STYLE_EXAMPLE = """\
-🌅 *Morning Briefing - Oct 12, 2026*
+🌅 *Morning Briefing - 12 Okt 2026*
 
-*Macro & Momentum:*
-IHSG is at 7,200. USD/IDR is hovering at Rp 15,500, creating tailwinds for export miners. Volume analysis shows strong institutional accumulation in banking, while coal volumes are drying up.
+*Makro & Pasar:*
+• *IHSG:* 6.093,76 (+1,04%) | Rebound teknikal, volume 5D turun tipis (-9,0%)
+• *USD/IDR:* Rp 17.875 (+0,38%) — Rupiah tertekan, menopang margin eksportir komoditas namun membebani sektor berbasis impor.
+• *Likuiditas:* Arus dana bertahan di Perbankan (-7,5%), volume Tambang/Nikel mengering (-46,5%).
 
-*Recommendation:*
-🏦 *Banking.* Prioritize accumulating BBRI. Foreign flow is stabilizing and the P/E ratio is historically cheap ahead of the Q3 earnings cycle.
+*Rekomendasi Sektor:*
+🏦 *Perbankan (BBRI)* — Akumulasi bertahap. Prospek laba bersih Q3 solid. Harga saat ini (Rp 3.100) masih berada di rentang akumulasi aman menuju target jual Rp 3.450.
 
-*Key Catalysts:*
-- *ANTM:* Nickel prices dropped 2% overnight in London.
-- *DSSA:* Company announced potential expansion into renewable assets.
+*Katalis Saham:*
+- *BBRI:* Proyeksi pertumbuhan laba bersih Q3 solid, mengimbangi sentimen risiko kredit perbankan.
+- *ANTM:* Penyesuaian harga emas fisik di Pegadaian; volume perdagangan terkoreksi -39%.
 """
 
 
 def _flow_label(pct: float) -> str:
     if pct >= 15:
-        return "rising participation / accumulation"
+        return "akumulasi / volume meningkat"
     if pct <= -15:
-        return "volume drying up"
-    return "flat"
+        return "volume mengering / sepi"
+    return "volume stabil / netral"
 
 
 def build_prompt(now: datetime, macro: dict[str, dict[str, Any]],
                  stocks: list[dict[str, Any]], flows: dict[str, float],
                  headlines: dict[str, list[dict[str, Any]]],
                  dividends: list[dict[str, Any]]) -> str:
+    now_day = DAYS_ID[now.weekday()]
     lines: list[str] = [
-        f"CURRENT TIME: {now:%A} {fmt_brief_date(now)}, {now:%H:%M} WIB (pre-market, before the 09:00 WIB open).",
+        f"WAKTU SAAT INI: {now_day}, {fmt_brief_date(now)}, {now:%H:%M} WIB (pra-pembukaan perdagangan BEI sebelum 09:00 WIB).",
         "",
-        "MARKET SNAPSHOT (last available close):",
+        "RINGKASAN PASAR (penutupan terakhir):",
     ]
 
     ihsg = macro.get("IHSG", {})
     lines.append(
-        f"- IHSG (^JKSE): {fmt_index(ihsg.get('close'))} ({fmt_pct(ihsg.get('change_pct'))} d/d), "
-        f"as of {ihsg.get('as_of') or 'N/A'} | 5D avg volume {fmt_volume(ihsg.get('vol_ma'))} vs prior 5D "
+        f"- IHSG (^JKSE): {fmt_index(ihsg.get('close'))} ({fmt_pct(ihsg.get('change_pct'))} h/h), "
+        f"per {ihsg.get('as_of') or 'N/A'} | Rerata vol 5H {fmt_volume(ihsg.get('vol_ma'))} vs 5H sebelumnya "
         f"{fmt_volume(ihsg.get('vol_ma_prev'))} ({fmt_pct(ihsg.get('vol_diff_pct'))})"
     )
     fx = macro.get("USD/IDR", {})
     lines.append(
-        f"- USD/IDR (IDR=X): {fmt_rp(fx.get('close'))} ({fmt_pct(fx.get('change_pct'))} d/d), "
-        f"as of {fx.get('as_of') or 'N/A'}"
+        f"- USD/IDR (IDR=X): {fmt_rp(fx.get('close'))} ({fmt_pct(fx.get('change_pct'))} h/h), "
+        f"per {fx.get('as_of') or 'N/A'}"
     )
 
-    lines += ["", "WATCHLIST (2-week volume differential = current 5D avg volume vs previous 5D avg volume):"]
+    lines += ["", "WATCHLIST (diferensial volume 2 pekan = rerata vol 5H saat ini vs 5H sebelumnya):"]
     if stocks:
         for s in stocks:
             lines.append(
-                f"- {s['ticker']} [{s['sector']}] {s.get('name', '')}: close {fmt_rp(s.get('close'))} "
-                f"({fmt_pct(s.get('change_pct'))} d/d) | buy-below {fmt_rp(s.get('buy_below'))} / "
-                f"sell-above {fmt_rp(s.get('sell_above'))} | 5D avg vol {fmt_volume(s.get('vol_ma'))} vs prior "
+                f"- {s['ticker']} [{s['sector']}] {s.get('name', '')}: harga {fmt_rp(s.get('close'))} "
+                f"({fmt_pct(s.get('change_pct'))} h/h) | batas beli {fmt_rp(s.get('buy_below'))} / "
+                f"batas jual {fmt_rp(s.get('sell_above'))} | Rerata vol 5H {fmt_volume(s.get('vol_ma'))} vs 5H sebelumnya "
                 f"{fmt_volume(s.get('vol_ma_prev'))} ({fmt_pct(s.get('vol_diff_pct'))})"
             )
     else:
-        lines.append("- (watchlist unavailable)")
+        lines.append("- (watchlist tidak tersedia)")
 
-    lines += ["", "SECTOR VOLUME FLOW (average of watchlist names, 5D vs prior 5D):"]
+    lines += ["", "ARUS VOLUME SEKTOR (rata-rata saham watchlist, 5H vs 5H sebelumnya):"]
     if flows:
         for sector, pct in sorted(flows.items(), key=lambda kv: kv[1], reverse=True):
             lines.append(f"- {sector}: {fmt_pct(pct)} ({_flow_label(pct)})")
     else:
         lines.append("- N/A")
 
-    lines += ["", "UPCOMING EX-DIVIDEND DATES (next 14 days):"]
+    lines += ["", "JADWAL CUM/EX-DIVIDEN TERDEKAT (14 hari ke depan):"]
     if dividends:
-        lines += [f"- {d['ticker']}: ex-date {fmt_brief_date(d['ex_date'])}" for d in dividends]
+        lines += [f"- {d['ticker']}: cum/ex-date {fmt_brief_date(d['ex_date'])}" for d in dividends]
     else:
-        lines.append("- None detected")
+        lines.append("- Tidak ada yang terdeteksi")
 
-    lines += ["", "LATEST HEADLINES:"]
+    lines += ["", "BERITA TERKINI DARI MEDIA KEUANGAN:"]
     any_news = False
     for source, items in headlines.items():
         lines.append(f"[{source}]")
         if not items:
-            lines.append("- (feed unavailable)")
+            lines.append("- (feed tidak tersedia)")
             continue
         any_news = True
         for item in items:
-            stamp = f"({item['published']:%b %d %H:%M} WIB) " if item.get("published") else ""
+            stamp = f"({item['published']:%d %b %H:%M} WIB) " if item.get("published") else ""
             summary = f" — {item['summary']}" if item.get("summary") else ""
             lines.append(f"- {stamp}{item['title']}{summary}")
     if not any_news:
-        lines.append("(No headlines available today - base the brief on market data only.)")
+        lines.append("(Tidak ada berita tersedia hari ini - susun briefing berdasarkan data pasar saja.)")
 
     lines += [
         "",
-        "TASK:",
-        "Write the 3-part brief: (1) Macro & Momentum, (2) one Explicit Sector Recommendation, "
-        "(3) Key Catalysts for the watchlist stocks. Output ONLY the brief, using EXACTLY this structure:",
+        "TUGAS:",
+        "Tulis 3 bagian brief dalam Bahasa Indonesia yang sangat rapi dan mudah dibaca di layar ponsel: "
+        "(1) Makro & Pasar (gunakan format poin peluru '•'), (2) Rekomendasi Sektor, "
+        "(3) Katalis Saham (HANYA untuk 2-4 saham dengan sentimen/katalis nyata). Output HANYA teks brief sesuai template berikut:",
         "",
         BRIEF_TEMPLATE.format(date=fmt_brief_date(now)),
-        "Suggested sector emojis: 🏦 Banking, ⛏️ Metals & Mining, ⚡ Energy/Coal, 🏗️ Infrastructure, "
-        "🛒 Consumer, 📡 Telco/Tech, 🏠 Property.",
+        "Saran emoji sektor: 🏦 Perbankan, ⛏️ Logam & Tambang, ⚡ Energi & Batubara, 🏗️ Infrastruktur, "
+        "🛒 Konsumer, 📡 Telekomunikasi/Teknologi, 🏠 Properti.",
         "",
-        "STYLE REFERENCE (illustrative numbers only - do NOT copy its facts):",
+        "CONTOH FORMAT & GAYA (angka hanya ilustrasi - JANGAN salin faktanya):",
         STYLE_EXAMPLE,
     ]
     return "\n".join(lines)
@@ -556,7 +566,7 @@ def sanitize_markdown(text: str) -> str:
     text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)           # **bold** -> *bold*
     text = re.sub(r"__(.+?)__", r"\1", text)                  # drop __underline__
     text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.M)     # drop headings
-    text = re.sub(r"^(\s*)[•*]\s+", r"\1- ", text, flags=re.M)  # "* item" -> "- item"
+    text = re.sub(r"^(\s*)\*\s+", r"\1- ", text, flags=re.M)  # "* item" -> "- item" (preserves •)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -580,13 +590,13 @@ def build_fallback_brief(header: str, macro: dict[str, dict[str, Any]],
     parts = [
         header,
         "",
-        "⚠️ AI synthesis unavailable - raw data snapshot.",
+        "⚠️ Sintesis AI tidak tersedia - ringkasan data pasar.",
         "",
-        "*Macro & Momentum:*",
-        f"IHSG *{fmt_index(ihsg.get('close'))}* ({fmt_pct(ihsg.get('change_pct'))}). "
-        f"USD/IDR *{fmt_rp(fx.get('close'))}* ({fmt_pct(fx.get('change_pct'))}).",
+        "*Makro & Pasar:*",
+        f"• *IHSG:* {fmt_index(ihsg.get('close'))} ({fmt_pct(ihsg.get('change_pct'))})",
+        f"• *USD/IDR:* {fmt_rp(fx.get('close'))} ({fmt_pct(fx.get('change_pct'))})",
         "",
-        "*Watchlist:*",
+        "*Pantauan Watchlist:*",
     ]
     if stocks:
         for s in stocks:
@@ -595,18 +605,18 @@ def build_fallback_brief(header: str, macro: dict[str, dict[str, Any]],
                 f"| Vol 2W {fmt_pct(s.get('vol_diff_pct'))}"
             )
     else:
-        parts.append("- Watchlist data unavailable.")
+        parts.append("- Data watchlist tidak tersedia.")
 
     top = [item for items in headlines.values() for item in items[:2]]
     if top:
-        parts += ["", "*Top Headlines:*"]
+        parts += ["", "*Berita Utama Terkini:*"]
         parts += [f"- {escape_md(i['source'])}: {escape_md(i['title'])}" for i in top]
     return "\n".join(parts)
 
 
 def format_dividend_radar(dividends: list[dict[str, Any]]) -> str:
-    rows = [f"- *{d['ticker']}:* Ex-date {fmt_brief_date(d['ex_date'])}" for d in dividends]
-    return "💰 *DIVIDEND RADAR*\n" + "\n".join(rows)
+    rows = [f"- *{d['ticker']}:* Cum/Ex-Date {fmt_brief_date(d['ex_date'])}" for d in dividends]
+    return "💰 *RADAR DIVIDEN*\n" + "\n".join(rows)
 
 
 # --------------------------------------------------------------------------- #

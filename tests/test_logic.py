@@ -88,7 +88,7 @@ class MarketHoursTest(unittest.TestCase):
 
 
 class MorningBriefFormatTest(unittest.TestCase):
-    HEADER = "🌅 *Morning Briefing - Oct 12, 2026*"
+    HEADER = "🌅 *Morning Briefing - 12 Okt 2026*"
 
     def test_prompt_contains_formatted_data(self) -> None:
         now = datetime(2026, 10, 12, 8, 30, tzinfo=mb.WIB)
@@ -107,17 +107,18 @@ class MorningBriefFormatTest(unittest.TestCase):
         }
         prompt = mb.build_prompt(now, macro, stocks, mb.sector_volume_flows(stocks), headlines, [])
 
-        for needle in ("6,093.76", "Rp 17,875", "Rp 3,100", "Morning Briefing - Oct 12, 2026",
-                       "(feed unavailable)"):
+        for needle in ("6,093.76", "Rp 17,875", "Rp 3,100", "Morning Briefing - 12 Okt 2026",
+                       "(feed tidak tersedia)", "WAKTU SAAT INI: Senin"):
             self.assertIn(needle, prompt)
 
     def test_model_output_sanitized_for_telegram(self) -> None:
-        raw = "## Morning brief\n**Macro & Momentum:**\nIHSG naik.\n\n\n* **BBRI:** strong\n```\nx\n```"
+        raw = "## Morning brief\n**Makro & Pasar:**\n• *IHSG:* 6.093 naik.\n\n\n* **BBRI:** laba solid\n```\nx\n```"
         out = mb.enforce_brief_format(raw, self.HEADER)
 
         self.assertTrue(out.startswith(self.HEADER))
         for forbidden in ("**", "```", "#", "\n\n\n"):
             self.assertNotIn(forbidden, out)
+        self.assertIn("• *IHSG:*", out)
         self.assertIn("- *BBRI:*", out)
 
     def test_long_message_split_under_telegram_limit(self) -> None:

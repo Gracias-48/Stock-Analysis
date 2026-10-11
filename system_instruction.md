@@ -93,15 +93,17 @@ Use standard emojis as visual tags so the user can identify the alert type from 
 > Price is Rp 2,150. Consider looking for entry setups.
 
 **Morning Brief Template Requirements:**
-Ensure the Gemini prompt strictly demands this format:
-> 🌅 *Morning Briefing - Oct 12, 2026*
+Ensure the Gemini prompt strictly demands this format (Bahasa Indonesia, tidy bullets, scannable for mobile):
+> 🌅 *Morning Briefing - 12 Okt 2026*
 > 
-> *Macro & Momentum:*
-> IHSG is at 7,200. USD/IDR is hovering at Rp 15,500, creating tailwinds for export miners. Volume analysis shows strong institutional accumulation in banking, while coal volumes are drying up.
+> *Makro & Pasar:*
+> • *IHSG:* 6.093,76 (+1,04%) | Rebound teknikal, volume 5D turun tipis (-9,0%)
+> • *USD/IDR:* Rp 17.875 (+0,38%) — Rupiah tertekan, menopang margin eksportir komoditas namun membebani sektor berbasis impor.
+> • *Likuiditas:* Arus dana bertahan di Perbankan (-7,5%), volume Tambang/Nikel mengering (-46,5%).
 > 
-> *Recommendation:*
-> 🏦 *Banking.* Prioritize accumulating BBRI. Foreign flow is stabilizing and the P/E ratio is historically cheap ahead of the Q3 earnings cycle.
+> *Rekomendasi Sektor:*
+> 🏦 *Perbankan (BBRI)* — Akumulasi bertahap. Prospek laba bersih Q3 solid. Harga saat ini (Rp 3.100) masih berada di rentang akumulasi aman menuju target jual Rp 3.450.
 > 
-> *Key Catalysts:*
-> - **ANTM:** Nickel prices dropped 2% overnight in London.
-> - **DSSA:** Company announced potential expansion into renewable assets.
+> *Katalis Saham:*
+> - *BBRI:* Proyeksi pertumbuhan laba bersih Q3 solid, mengimbangi sentimen risiko kredit perbankan.
+> - *ANTM:* Penyesuaian harga emas fisik di Pegadaian; volume perdagangan terkoreksi -39%.
