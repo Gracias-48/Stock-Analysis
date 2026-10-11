@@ -5,11 +5,12 @@ morning_brief.py - AI-synthesized IDX pre-market briefing.
 Pipeline
 --------
 1. Pull the top headlines from Kontan, CNBC Indonesia and Bisnis.com RSS feeds.
-2. Pull last closes for IHSG (^JKSE), USD/IDR (IDR=X) and every watchlist stock.
-3. Compute a 2-week volume differential per stock
-   (current 5-day average volume vs. the previous 5-day average volume).
+2. Pull 60 days of daily history and fundamental metrics for watchlist stocks,
+   plus closes for IHSG (^JKSE) and USD/IDR (IDR=X).
+3. Compute technical indicators (14-period RSI, 20-period SMA, 2-week volume
+   differential) and retrieve valuation metrics (P/E, P/B).
 4. Ask Gemini (google-genai SDK, gemini-3.8-flash with gemini-3.1-pro-preview as
-   fallback) for a 3-part brief: Macro & Momentum / Recommendation / Key Catalysts.
+   fallback) for an integrated brief: Makro & Pasar / Analisis Watchlist (Fundamental & Teknikal).
 5. Deliver the brief to Telegram.
 
 Schedule: 08:30 WIB (01:30 UTC), Monday-Friday, via GitHub Actions.
@@ -41,6 +42,7 @@ from typing import Any
 # pyrefly: ignore [missing-import]
 import feedparser
 import pandas as pd
+import pandas_ta as ta
 import requests
 # pyrefly: ignore [missing-import]
 import yfinance as yf
@@ -60,6 +62,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.8-flash"
 GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "").strip() or "gemini-3.1-pro-preview"
 HEADLINES_PER_SOURCE = 5
 VOLUME_WINDOW = 5                # 5-day MA vs previous 5-day MA = 2 trading weeks
+HISTORY_PERIOD = "60d"           # 60 daily bars for 14 RSI and 20 SMA
 DIVIDEND_HORIZON_DAYS = 14
 HTTP_TIMEOUT = 20
 TELEGRAM_MAX_LEN = 4000          # Telegram hard limit is 4096 chars
@@ -151,6 +154,13 @@ def clean_text(raw: str | None, limit: int = 220) -> str:
     if len(text) > limit:
         text = text[:limit].rsplit(" ", 1)[0] + "…"
     return text
+
+
+def _last_valid(series: Any) -> float | None:
+    if series is None:
+        return None
+    series = series.dropna()
+    return float(series.iloc[-1]) if not series.empty else None
 
 
 # --------------------------------------------------------------------------- #
@@ -257,9 +267,9 @@ def gather_headlines() -> dict[str, list[dict[str, Any]]]:
 
 
 # --------------------------------------------------------------------------- #
-# Market data
+# Market data & indicators
 # --------------------------------------------------------------------------- #
-def fetch_history(symbol: str, period: str = "1mo") -> pd.DataFrame | None:
+def fetch_history(symbol: str, period: str = HISTORY_PERIOD) -> pd.DataFrame | None:
     try:
         df = yf.Ticker(symbol).history(
             period=period, interval="1d", auto_adjust=False, actions=False
@@ -300,13 +310,14 @@ def volume_differential(df: pd.DataFrame, window: int = VOLUME_WINDOW) -> dict[s
     return result
 
 
-def summarize_symbol(symbol: str) -> dict[str, Any]:
+def summarize_symbol(symbol: str, fx_rate: float | None = None) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "symbol": symbol, "close": None, "prev_close": None,
         "change_pct": None, "as_of": None,
         "vol_ma": None, "vol_ma_prev": None, "vol_diff_pct": None,
+        "rsi": None, "sma": None, "pe": None, "pbv": None,
     }
-    df = fetch_history(symbol)
+    df = fetch_history(symbol, period=HISTORY_PERIOD)
     if df is None:
         return summary
 
@@ -319,6 +330,34 @@ def summarize_symbol(symbol: str) -> dict[str, Any]:
         if prev:
             summary["change_pct"] = (summary["close"] - prev) / prev * 100
     summary.update(volume_differential(df))
+
+    # Technical indicators via pandas_ta (14-period RSI, 20-period SMA)
+    try:
+        summary["rsi"] = _last_valid(ta.rsi(closes, length=14))
+        summary["sma"] = _last_valid(ta.sma(closes, length=20))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Indicator calculation failed for %s: %s", symbol, exc)
+
+    # Fundamental valuation metrics via yfinance .info (P/E and P/B)
+    # Skipped for macro symbols (^JKSE, IDR=X) which don't have corporate valuation
+    if not symbol.startswith("^") and "=X" not in symbol:
+        try:
+            info = yf.Ticker(symbol).info or {}
+            raw_pe = info.get("trailingPE")
+            raw_pbv = info.get("priceToBook")
+            if is_num(raw_pe) and raw_pe > 0:
+                summary["pe"] = round(float(raw_pe), 2)
+            if is_num(raw_pbv) and raw_pbv > 0:
+                # Yahoo Finance currency mismatch fix: IDX miners/energy (MDKA, DSSA, CUAN)
+                # report books in USD while price is in IDR, resulting in raw_pbv ~10,000-100,000x.
+                rate = fx_rate or 17500.0
+                if info.get("financialCurrency") == "USD" or raw_pbv > 500:
+                    summary["pbv"] = round(float(raw_pbv) / rate, 2)
+                else:
+                    summary["pbv"] = round(float(raw_pbv), 2)
+        except Exception as exc:  # noqa: BLE001
+            log.info("Valuation metrics unavailable for %s: %s", symbol, exc)
+
     return summary
 
 
@@ -379,18 +418,21 @@ Tugas Anda adalah menyusun ringkasan pra-pembukaan pasar (pre-market brief) untu
 Gaya Bahasa & Nada:
 - Bahasa: SELALU tulis dalam Bahasa Indonesia yang profesional, ringkas, padat, dan institusional.
 - Tanpa basa-basi: Jangan gunakan salam pembuka/penutup, disclaimer, atau kalimat basa-basi.
-- Action-oriented: Sebutkan ticker saham, level harga, dan arah rekomendasi secara konkret.
+- Action-oriented: Berikan penilaian konkret dan terarah untuk setiap saham mengacu pada target harga beli/jual/stop-loss.
 
 Akurasi Data (Grounding):
-- Gunakan HANYA data pasar dan berita yang disediakan. Jangan pernah mengarang angka, harga, aksi korporasi, atau rumor. Jika data "N/A", abaikan.
+- Gunakan HANYA data pasar, indikator teknikal (RSI, SMA20, volume differential), metrik valuasi (P/E, PBV), dan berita yang disediakan. Jangan pernah mengarang angka atau rumor. Jika data valuasi atau teknikal bernilai "N/A", jangan mereka-reka.
 - Mata uang: tulis dalam format Rupiah, misal "Rp 3.100" atau "Rp 17.875".
 - IHSG adalah level indeks, misal "6.093,76".
 
 Format & Kerapian Tampilan (Mobile-Friendly & Tidy):
 - DILARANG membuat paragraf panjang yang padat (wall of text).
-- Di bagian Makro & Pasar, gunakan poin peluru (•) yang rapi agar mudah dibaca cepat (skimming).
-- Bold metrik kunci dan kode saham dengan SATU tanda bintang: *teks*. Jangan gunakan bintang ganda (**).
-- Bagian Katalis Saham: HANYA pilih 2 hingga 4 saham yang memiliki katalis/berita spesifik hari ini. JANGAN mencantumkan semua saham jika tidak ada berita atau sentimen signifikan! Tulis maksimal 1 kalimat padat per saham.
+- Di bagian Makro & Pasar, gunakan poin peluru (•) yang rapi untuk memisahkan IHSG, USD/IDR, dan likuiditas sektoral.
+- Bagian Analisis Watchlist (Fundamental & Teknikal):
+  * Wajib menyajikan SEMUA saham yang ada di watchlist (satu baris per saham).
+  * Format judul baris: `- *<TICKER> (<Latest Price>)*: <1 kalimat terpadu>`
+  * Dalam 1 kalimat tersebut, padukan analisis valuasi (P/E, PBV), posisi teknikal (RSI, posisi harga thd SMA20), arus volume, dan berita/katalis (jika ada), serta akhiri dengan rekomendasi aksi jelas (Akumulasi Beli / Hold / Waspada Stop Loss / Take Profit) mengacu pada target harga pengguna.
+- Bold metrik penting, harga, dan kode saham dengan SATU tanda bintang: *teks*. Jangan gunakan bintang ganda (**).
 - Dilarang menggunakan heading markdown (#), code blocks (```), tabel, link markdown, atau garis bawah (_).
 - Pisahkan setiap bagian utama dengan tepat 1 baris kosong.
 """
@@ -403,12 +445,9 @@ BRIEF_TEMPLATE = """\
 • *USD/IDR:* <kurs rupiah> (<% pergerakan>) — <1 kalimat ringkas dampak ke sektor ekspor vs impor>
 • *Likuiditas:* <1 kalimat ringkas sektor yang diakumulasi vs yang sepi volume>
 
-*Rekomendasi Sektor:*
-<emoji sektor> *<Sektor> (<TICKER>)* — <Panggilan aksi jelas: Akumulasi / Hold / Profit Taking. Alasan data-backed: laba/valuasi, teknikal/volume, atau sentimen berita. Sebutkan harga saat ini vs level beli/jual.>
-
-*Katalis Saham:*
-- *<TICKER>:* <1 kalimat padat katalis utama dari berita atau pergerakan harga/volume>
-<PENTING: HANYA 2-4 saham dengan katalis nyata hari ini. Jangan daftarkan saham tanpa berita/katalis khusus!>
+*Analisis Watchlist (Fundamental & Teknikal):*
+- *<TICKER> (<Latest Price>)*: <1 kalimat ringkas memadukan valuasi P/E & PBV, RSI & SMA20, volume, dan katalis berita, diakhiri rekomendasi aksi berbasis target beli/jual/stop-loss.>
+<Wajib 1 baris per saham untuk SETIAP saham di watchlist.json>
 """
 
 STYLE_EXAMPLE = """\
@@ -419,12 +458,13 @@ STYLE_EXAMPLE = """\
 • *USD/IDR:* Rp 17.875 (+0,38%) — Rupiah tertekan, menopang margin eksportir komoditas namun membebani sektor berbasis impor.
 • *Likuiditas:* Arus dana bertahan di Perbankan (-7,5%), volume Tambang/Nikel mengering (-46,5%).
 
-*Rekomendasi Sektor:*
-🏦 *Perbankan (BBRI)* — Akumulasi bertahap. Prospek laba bersih Q3 solid. Harga saat ini (Rp 3.100) masih berada di rentang akumulasi aman menuju target jual Rp 3.450.
-
-*Katalis Saham:*
-- *BBRI:* Proyeksi pertumbuhan laba bersih Q3 solid, mengimbangi sentimen risiko kredit perbankan.
-- *ANTM:* Penyesuaian harga emas fisik di Pegadaian; volume perdagangan terkoreksi -39%.
+*Analisis Watchlist (Fundamental & Teknikal):*
+- *BBRI (Rp 3.100)*: P/E 7.6x dan PBV 1.45x atraktif menjelang rilis laba Q3, RSI 45.4 bertahan di bawah SMA20 (Rp 3.189); akumulasi bertahap menuju target jual Rp 3.450 dengan batas stop loss Rp 2.700.
+- *ANTM (Rp 3.180)*: Sentimen harga emas fisik positif kendati volume 2W turun -39.2%, RSI 49.7 netral di bawah SMA20 (Rp 3.211); hold dan antre beli jika terkoreksi mendekati Rp 2.900.
+- *MDKA (Rp 2.940)*: RSI 51.4 menguji resistensi SMA20 (Rp 2.912) di tengah penurunan likuiditas -53.9%; wait and see, disiplin batas beli Rp 2.650 dan stop loss Rp 2.500.
+- *DSSA (Rp 1.130)*: Menguat +2.7% mendekati target jual Rp 1.250 dengan RSI 55.0 melaju di atas SMA20 (Rp 1.089); pertimbangkan bertahap profit taking.
+- *CUAN (Rp 770)*: RSI 33.1 mendekati zona oversold di bawah SMA20 (Rp 888) dengan volume sepi; pantau pantulan teknikal di atas batas beli Rp 680, waspada batas stop loss Rp 620.
+- *DEWA (Rp 366)*: Likuiditas relatif bertahan (-3.2%) dengan RSI 45.4 bertengger di atas SMA20 (Rp 362); akumulasi bertahap menuju target jual Rp 420.
 """
 
 
@@ -459,15 +499,23 @@ def build_prompt(now: datetime, macro: dict[str, dict[str, Any]],
         f"per {fx.get('as_of') or 'N/A'}"
     )
 
-    lines += ["", "WATCHLIST (diferensial volume 2 pekan = rerata vol 5H saat ini vs 5H sebelumnya):"]
+    lines += ["", "WATCHLIST (harga terkini, teknikal RSI & SMA20, fundamental P/E & PBV, serta target):"]
     if stocks:
         for s in stocks:
-            sl_info = f" / stop loss {fmt_rp(s.get('stop_loss'))}" if s.get("stop_loss") else ""
+            rsi_str = f"{s['rsi']:.1f}" if is_num(s.get("rsi")) else "N/A"
+            sma_str = fmt_rp(s.get("sma"))
+            vol_diff_str = fmt_pct(s.get("vol_diff_pct"))
+            pe_str = f"{s['pe']:.1f}x" if is_num(s.get("pe")) else "N/A"
+            pbv_str = f"{s['pbv']:.2f}x" if is_num(s.get("pbv")) else "N/A"
+            buy_str = fmt_rp(s.get("buy_below"))
+            sell_str = fmt_rp(s.get("sell_above"))
+            sl_str = f", Stop loss: {fmt_rp(s.get('stop_loss'))}" if s.get("stop_loss") else ""
+
             lines.append(
-                f"- {s['ticker']} [{s['sector']}] {s.get('name', '')}: harga {fmt_rp(s.get('close'))} "
-                f"({fmt_pct(s.get('change_pct'))} h/h) | batas beli {fmt_rp(s.get('buy_below'))} / "
-                f"batas jual {fmt_rp(s.get('sell_above'))}{sl_info} | Rerata vol 5H {fmt_volume(s.get('vol_ma'))} vs 5H sebelumnya "
-                f"{fmt_volume(s.get('vol_ma_prev'))} ({fmt_pct(s.get('vol_diff_pct'))})"
+                f"- {s['ticker']} [{s['sector']}]: price {fmt_rp(s.get('close'))} ({fmt_pct(s.get('change_pct'))}) | "
+                f"Technical -> RSI: {rsi_str}, SMA20: {sma_str}, Vol Diff: {vol_diff_str} | "
+                f"Fundamental -> P/E: {pe_str}, PBV: {pbv_str} | "
+                f"Buy below: {buy_str}, Sell above: {sell_str}{sl_str}"
             )
     else:
         lines.append("- (watchlist tidak tersedia)")
@@ -503,13 +551,11 @@ def build_prompt(now: datetime, macro: dict[str, dict[str, Any]],
     lines += [
         "",
         "TUGAS:",
-        "Tulis 3 bagian brief dalam Bahasa Indonesia yang sangat rapi dan mudah dibaca di layar ponsel: "
-        "(1) Makro & Pasar (gunakan format poin peluru '•'), (2) Rekomendasi Sektor, "
-        "(3) Katalis Saham (HANYA untuk 2-4 saham dengan sentimen/katalis nyata). Output HANYA teks brief sesuai template berikut:",
+        "Tulis 2 bagian brief dalam Bahasa Indonesia yang sangat rapi dan mudah dibaca di layar ponsel: "
+        "(1) Makro & Pasar (gunakan format poin peluru '•'), "
+        "(2) Analisis Watchlist (Fundamental & Teknikal) untuk SETIAP saham di watchlist (format: - *<TICKER> (<Latest Price>)*: ...). Output HANYA teks brief sesuai template berikut:",
         "",
         BRIEF_TEMPLATE.format(date=fmt_brief_date(now)),
-        "Saran emoji sektor: 🏦 Perbankan, ⛏️ Logam & Tambang, ⚡ Energi & Batubara, 🏗️ Infrastruktur, "
-        "🛒 Konsumer, 📡 Telekomunikasi/Teknologi, 🏠 Properti.",
         "",
         "CONTOH FORMAT & GAYA (angka hanya ilustrasi - JANGAN salin faktanya):",
         STYLE_EXAMPLE,
@@ -597,13 +643,20 @@ def build_fallback_brief(header: str, macro: dict[str, dict[str, Any]],
         f"• *IHSG:* {fmt_index(ihsg.get('close'))} ({fmt_pct(ihsg.get('change_pct'))})",
         f"• *USD/IDR:* {fmt_rp(fx.get('close'))} ({fmt_pct(fx.get('change_pct'))})",
         "",
-        "*Pantauan Watchlist:*",
+        "*Analisis Watchlist (Fundamental & Teknikal):*",
     ]
     if stocks:
         for s in stocks:
+            rsi_txt = f"{s['rsi']:.1f}" if is_num(s.get("rsi")) else "N/A"
+            sma_txt = fmt_rp(s.get("sma"))
+            pe_txt = f"{s['pe']:.1f}x" if is_num(s.get("pe")) else "N/A"
+            pbv_txt = f"{s['pbv']:.2f}x" if is_num(s.get("pbv")) else "N/A"
+            vol_diff_txt = fmt_pct(s.get("vol_diff_pct"))
+
             parts.append(
-                f"- *{s['ticker']}:* {fmt_rp(s.get('close'))} ({fmt_pct(s.get('change_pct'))}) "
-                f"| Vol 2W {fmt_pct(s.get('vol_diff_pct'))}"
+                f"- *{s['ticker']} ({fmt_rp(s.get('close'))})*: {fmt_pct(s.get('change_pct'))} | "
+                f"RSI: {rsi_txt}, SMA20: {sma_txt} | P/E: {pe_txt}, PBV: {pbv_txt} | "
+                f"Vol 2W: {vol_diff_txt}"
             )
     else:
         parts.append("- Data watchlist tidak tersedia.")
@@ -716,7 +769,8 @@ def main() -> int:
 
     headlines = gather_headlines()
     macro = {label: summarize_symbol(sym) for label, sym in MACRO_SYMBOLS.items()}
-    stock_data = [{**s, **summarize_symbol(s["symbol"])} for s in stocks]
+    fx_rate = macro.get("USD/IDR", {}).get("close")
+    stock_data = [{**s, **summarize_symbol(s["symbol"], fx_rate=fx_rate)} for s in stocks]
     flows = sector_volume_flows(stock_data)
     dividends = fetch_dividend_radar(stocks, now.date())
 

@@ -118,6 +118,7 @@ class MorningBriefFormatTest(unittest.TestCase):
             "ticker": "BBRI", "sector": "Banking", "name": "BRI", "close": 3100.0,
             "change_pct": 2.31, "buy_below": 2850, "sell_above": 3450,
             "vol_ma": 2.1e8, "vol_ma_prev": 2.3e8, "vol_diff_pct": -7.5,
+            "rsi": 45.4, "sma": 3189.0, "pe": 7.6, "pbv": 1.45,
         }]
         headlines = {
             "Kontan": [{"source": "Kontan", "title": "Rupiah melemah", "summary": "", "published": None}],
@@ -126,7 +127,9 @@ class MorningBriefFormatTest(unittest.TestCase):
         prompt = mb.build_prompt(now, macro, stocks, mb.sector_volume_flows(stocks), headlines, [])
 
         for needle in ("6,093.76", "Rp 17,875", "Rp 3,100", "Morning Briefing - 12 Okt 2026",
-                       "(feed tidak tersedia)", "WAKTU SAAT INI: Senin"):
+                       "(feed tidak tersedia)", "WAKTU SAAT INI: Senin",
+                       "Technical -> RSI: 45.4, SMA20: Rp 3,189",
+                       "Fundamental -> P/E: 7.6x, PBV: 1.45x"):
             self.assertIn(needle, prompt)
 
     def test_model_output_sanitized_for_telegram(self) -> None:
