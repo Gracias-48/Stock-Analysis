@@ -129,8 +129,31 @@ class MorningBriefFormatTest(unittest.TestCase):
         for needle in ("6,093.76", "Rp 17,875", "Rp 3,100", "Morning Briefing - 12 Okt 2026",
                        "(feed tidak tersedia)", "WAKTU SAAT INI: Senin",
                        "Technical -> RSI: 45.4, SMA20: Rp 3,189",
-                       "Fundamental -> P/E: 7.6x, PBV: 1.45x"):
+                       "Fundamental -> P/E: 7.6x, PBV: 1.45x",
+                       "*Rekomendasi Sektor:*", "*Katalis Saham:*",
+                       "*Analisis Watchlist (Teknikal & Valuasi):*"):
             self.assertIn(needle, prompt)
+
+    def test_fallback_brief_structure(self) -> None:
+        macro = {
+            "IHSG": {"close": 6093.76, "change_pct": 1.04},
+            "USD/IDR": {"close": 17875.0, "change_pct": 0.38},
+        }
+        stocks = [{
+            "ticker": "BBRI", "sector": "Banking", "name": "BRI", "close": 3100.0,
+            "change_pct": 2.31, "buy_below": 2850, "sell_above": 3450, "stop_loss": 2700,
+            "rsi": 45.4, "sma": 3189.0, "pe": 7.6, "pbv": 1.45, "vol_diff_pct": -7.5,
+        }]
+        headlines = {"Kontan": [{"source": "Kontan", "title": "Rupiah Menguat", "summary": ""}]}
+        flows = {"Banking": -7.5}
+        fallback = mb.build_fallback_brief(self.HEADER, macro, stocks, headlines, flows=flows)
+
+        self.assertIn("*Makro & Pasar:*", fallback)
+        self.assertIn("*Rekomendasi Sektor:*", fallback)
+        self.assertIn("*Katalis Saham:*", fallback)
+        self.assertIn("*Analisis Watchlist (Teknikal & Valuasi):*", fallback)
+        self.assertIn("• *BBRI (Rp 3,100)*: P/E 7.6x | PBV 1.45x | RSI 45.4 | SMA20 Rp 3,189", fallback)
+        self.assertIn("👉 *Aksi:* Beli < Rp 2,850 (TP: Rp 3,450 | SL: Rp 2,700)", fallback)
 
     def test_model_output_sanitized_for_telegram(self) -> None:
         raw = "## Morning brief\n**Makro & Pasar:**\n• *IHSG:* 6.093 naik.\n\n\n* **BBRI:** laba solid\n```\nx\n```"

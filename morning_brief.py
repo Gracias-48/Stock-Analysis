@@ -10,7 +10,7 @@ Pipeline
 3. Compute technical indicators (14-period RSI, 20-period SMA, 2-week volume
    differential) and retrieve valuation metrics (P/E, P/B).
 4. Ask Gemini (google-genai SDK, gemini-3.8-flash with gemini-3.1-pro-preview as
-   fallback) for an integrated brief: Makro & Pasar / Analisis Watchlist (Fundamental & Teknikal).
+   fallback) for an integrated brief: Makro & Pasar / Rekomendasi Sektor / Katalis Saham / Analisis Watchlist (Teknikal & Valuasi).
 5. Deliver the brief to Telegram.
 
 Schedule: 08:30 WIB (01:30 UTC), Monday-Friday, via GitHub Actions.
@@ -93,6 +93,11 @@ NEWS_SOURCES: dict[str, list[str]] = {
 }
 
 MACRO_SYMBOLS = {"IHSG": "^JKSE", "USD/IDR": "IDR=X"}
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -413,7 +418,7 @@ def fetch_dividend_radar(stocks: list[dict[str, Any]], today: date,
 # --------------------------------------------------------------------------- #
 SYSTEM_INSTRUCTION = """\
 Anda adalah Institutional Equity Strategist senior yang memantau Bursa Efek Indonesia (BEI / IDX).
-Tugas Anda adalah menyusun ringkasan pra-pembukaan pasar (pre-market brief) untuk dibaca cepat di Telegram (layar ponsel).
+Tugas Anda adalah menyusun ringkasan pra-pembukaan pasar (pre-market brief) yang bersih, terstruktur rapi, dan mudah dibaca cepat di Telegram (layar ponsel).
 
 Gaya Bahasa & Nada:
 - Bahasa: SELALU tulis dalam Bahasa Indonesia yang profesional, ringkas, padat, dan institusional.
@@ -421,18 +426,25 @@ Gaya Bahasa & Nada:
 - Action-oriented: Berikan penilaian konkret dan terarah untuk setiap saham mengacu pada target harga beli/jual/stop-loss.
 
 Akurasi Data (Grounding):
-- Gunakan HANYA data pasar, indikator teknikal (RSI, SMA20, volume differential), metrik valuasi (P/E, PBV), dan berita yang disediakan. Jangan pernah mengarang angka atau rumor. Jika data valuasi atau teknikal bernilai "N/A", jangan mereka-reka.
+- Gunakan HANYA data pasar, indikator teknikal (RSI, SMA20, volume differential), metrik valuasi (P/E, PBV), dan berita yang disediakan. Jangan pernah mengarang angka atau rumor. Jika data bernilai "N/A", tampilkan "N/A".
 - Mata uang: tulis dalam format Rupiah, misal "Rp 3.100" atau "Rp 17.875".
 - IHSG adalah level indeks, misal "6.093,76".
 
-Format & Kerapian Tampilan (Mobile-Friendly & Tidy):
-- DILARANG membuat paragraf panjang yang padat (wall of text).
-- Di bagian Makro & Pasar, gunakan poin peluru (•) yang rapi untuk memisahkan IHSG, USD/IDR, dan likuiditas sektoral.
-- Bagian Analisis Watchlist (Fundamental & Teknikal):
-  * Wajib menyajikan SEMUA saham yang ada di watchlist (satu baris per saham).
-  * Format judul baris: `- *<TICKER> (<Latest Price>)*: <1 kalimat terpadu>`
-  * Dalam 1 kalimat tersebut, padukan analisis valuasi (P/E, PBV), posisi teknikal (RSI, posisi harga thd SMA20), arus volume, dan berita/katalis (jika ada), serta akhiri dengan rekomendasi aksi jelas (Akumulasi Beli / Hold / Waspada Stop Loss / Take Profit) mengacu pada target harga pengguna.
-- Bold metrik penting, harga, dan kode saham dengan SATU tanda bintang: *teks*. Jangan gunakan bintang ganda (**).
+Format & Struktur Brief (Wajib TEPAT 4 Bagian Terpisah):
+1. *Makro & Pasar:*
+   Gunakan poin peluru (•) yang rapi untuk memisahkan IHSG, USD/IDR, dan likuiditas sektoral.
+2. *Rekomendasi Sektor:*
+   Pilih 1 sektor terbaik (sertakan emoji sektor, misal 🏦/⚡/⛏️) berdasarkan arus likuiditas dan makro, sebutkan top pick saham dari watchlist beserta alasan ringkas.
+3. *Katalis Saham:*
+   2–4 poin peluru (•) merangkum berita/katalis paling relevan dari media keuangan untuk saham-saham di watchlist.
+4. *Analisis Watchlist (Teknikal & Valuasi):*
+   Wajib mencakup SEMUA saham di watchlist. Format setiap saham dalam 2 baris terpisah agar bersih dan mudah dibaca (DILARANG paragraf padat/wall of text):
+   • *<TICKER> (<Latest Price>)*: P/E <pe> | PBV <pbv> | RSI <rsi> | SMA20 <sma>
+     👉 *Aksi:* <Rekomendasi aksi ringkas> (TP: <target_jual> | SL: <stop_loss>)
+   Pisahkan setiap saham dengan 1 baris kosong.
+
+Aturan Penulisan Telegram:
+- Bold judul metrik penting, harga, dan kode saham dengan SATU tanda bintang: *teks*. Jangan gunakan bintang ganda (**).
 - Dilarang menggunakan heading markdown (#), code blocks (```), tabel, link markdown, atau garis bawah (_).
 - Pisahkan setiap bagian utama dengan tepat 1 baris kosong.
 """
@@ -445,26 +457,54 @@ BRIEF_TEMPLATE = """\
 • *USD/IDR:* <kurs rupiah> (<% pergerakan>) — <1 kalimat ringkas dampak ke sektor ekspor vs impor>
 • *Likuiditas:* <1 kalimat ringkas sektor yang diakumulasi vs yang sepi volume>
 
-*Analisis Watchlist (Fundamental & Teknikal):*
-- *<TICKER> (<Latest Price>)*: <1 kalimat ringkas memadukan valuasi P/E & PBV, RSI & SMA20, volume, dan katalis berita, diakhiri rekomendasi aksi berbasis target beli/jual/stop-loss.>
-<Wajib 1 baris per saham untuk SETIAP saham di watchlist.json>
+*Rekomendasi Sektor:*
+<Emoji Sektor> *<Nama Sektor>:* <Alasan pemilihan sektor berdasarkan arus volume/makro, sebutkan top pick saham dari watchlist.>
+
+*Katalis Saham:*
+• *<TICKER>:* <Katalis berita / sentimen penting dari media keuangan>
+• *<TICKER>:* <Katalis berita / sentimen penting dari media keuangan>
+
+*Analisis Watchlist (Teknikal & Valuasi):*
+• *<TICKER> (<Latest Price>)*: P/E <pe> | PBV <pbv> | RSI <rsi> | SMA20 <sma>
+  👉 *Aksi:* <Rekomendasi aksi ringkas> (TP: <target jual> | SL: <stop loss>)
+
+<Wajib menyajikan SEMUA saham di watchlist.json, pisahkan antar saham dengan 1 baris kosong>
 """
 
 STYLE_EXAMPLE = """\
 🌅 *Morning Briefing - 12 Okt 2026*
 
 *Makro & Pasar:*
-• *IHSG:* 6.093,76 (+1,04%) | Rebound teknikal, volume 5D turun tipis (-9,0%)
-• *USD/IDR:* Rp 17.875 (+0,38%) — Rupiah tertekan, menopang margin eksportir komoditas namun membebani sektor berbasis impor.
+• *IHSG:* 6.093,76 (+1,04%) | Rebound teknikal jangka pendek, volume 5D turun tipis (-9,0%)
+• *USD/IDR:* Rp 17.875 (+0,38%) — Rupiah tertekan, menopang margin eksportir komoditas namun membebani emiten berbasis impor.
 • *Likuiditas:* Arus dana bertahan di Perbankan (-7,5%), volume Tambang/Nikel mengering (-46,5%).
 
-*Analisis Watchlist (Fundamental & Teknikal):*
-- *BBRI (Rp 3.100)*: P/E 7.6x dan PBV 1.45x atraktif menjelang rilis laba Q3, RSI 45.4 bertahan di bawah SMA20 (Rp 3.189); akumulasi bertahap menuju target jual Rp 3.450 dengan batas stop loss Rp 2.700.
-- *ANTM (Rp 3.180)*: Sentimen harga emas fisik positif kendati volume 2W turun -39.2%, RSI 49.7 netral di bawah SMA20 (Rp 3.211); hold dan antre beli jika terkoreksi mendekati Rp 2.900.
-- *MDKA (Rp 2.940)*: RSI 51.4 menguji resistensi SMA20 (Rp 2.912) di tengah penurunan likuiditas -53.9%; wait and see, disiplin batas beli Rp 2.650 dan stop loss Rp 2.500.
-- *DSSA (Rp 1.130)*: Menguat +2.7% mendekati target jual Rp 1.250 dengan RSI 55.0 melaju di atas SMA20 (Rp 1.089); pertimbangkan bertahap profit taking.
-- *CUAN (Rp 770)*: RSI 33.1 mendekati zona oversold di bawah SMA20 (Rp 888) dengan volume sepi; pantau pantulan teknikal di atas batas beli Rp 680, waspada batas stop loss Rp 620.
-- *DEWA (Rp 366)*: Likuiditas relatif bertahan (-3.2%) dengan RSI 45.4 bertengger di atas SMA20 (Rp 362); akumulasi bertahap menuju target jual Rp 420.
+*Rekomendasi Sektor:*
+🏦 *Perbankan:* Prioritaskan *BBRI* seiring arus likuiditas paling stabil (-7,5%) dan valuasi atraktif (P/E 7.6x), didukung ekspektasi positif laba bersih Q3.
+
+*Katalis Saham:*
+• *BBRI:* Pertumbuhan laba bersih Q3 2026 diproyeksikan tetap solid di tengah tantangan NPL industri.
+• *ANTM:* Sentimen positif harga emas fisik Pegadaian dan rencana ekspansi pembiayaan emas.
+• *DSSA & CUAN:* Pelemahan rupiah menjadi katalis positif bagi pendapatan berbasis dolar eksportir energi.
+
+*Analisis Watchlist (Teknikal & Valuasi):*
+• *BBRI (Rp 3.100)*: P/E 7.6x | PBV 1.45x | RSI 45.4 | SMA20 Rp 3.189
+  👉 *Aksi:* Antre beli di bawah Rp 2.850 (TP: Rp 3.450 | SL: Rp 2.700)
+
+• *ANTM (Rp 3.180)*: P/E 8.6x | PBV 2.05x | RSI 49.7 | SMA20 Rp 3.211
+  👉 *Aksi:* Akumulasi beli di bawah Rp 3.190 (TP: Rp 3.500 | SL: Rp 2.950)
+
+• *MDKA (Rp 2.940)*: P/E 77.2x | PBV 4.57x | RSI 51.4 | SMA20 Rp 2.912
+  👉 *Aksi:* Hold, tunggu koreksi ke Rp 2.650 (TP: Rp 3.250 | SL: Rp 2.500)
+
+• *DSSA (Rp 1.130)*: P/E 39.4x | PBV 4.51x | RSI 55.0 | SMA20 Rp 1.089
+  👉 *Aksi:* Akumulasi beli di batas Rp 1.130 (TP: Rp 1.240 | SL: Rp 1.040)
+
+• *CUAN (Rp 770)*: P/E 35.4x | PBV 14.36x | RSI 33.1 | SMA20 Rp 888
+  👉 *Aksi:* Hold, pantau pantulan teknikal dekat Rp 680 (TP: Rp 900 | SL: Rp 620)
+
+• *DEWA (Rp 366)*: P/E 3.3x | PBV 1.77x | RSI 45.4 | SMA20 Rp 362
+  👉 *Aksi:* Akumulasi beli jika uji batas Rp 360 (TP: Rp 400 | SL: Rp 315)
 """
 
 
@@ -551,9 +591,12 @@ def build_prompt(now: datetime, macro: dict[str, dict[str, Any]],
     lines += [
         "",
         "TUGAS:",
-        "Tulis 2 bagian brief dalam Bahasa Indonesia yang sangat rapi dan mudah dibaca di layar ponsel: "
-        "(1) Makro & Pasar (gunakan format poin peluru '•'), "
-        "(2) Analisis Watchlist (Fundamental & Teknikal) untuk SETIAP saham di watchlist (format: - *<TICKER> (<Latest Price>)*: ...). Output HANYA teks brief sesuai template berikut:",
+        "Tulis 4 bagian brief dalam Bahasa Indonesia yang sangat rapi, bersih, dan mudah dibaca di layar ponsel (Telegram):",
+        "(1) *Makro & Pasar:* (poin peluru '•')",
+        "(2) *Rekomendasi Sektor:* (1 sektor top pick + saham unggulan + alasan ringkas)",
+        "(3) *Katalis Saham:* (2-4 poin peluru '•' merangkum berita/katalis paling relevan dari media keuangan)",
+        "(4) *Analisis Watchlist (Teknikal & Valuasi):* (SETIAP saham di watchlist dengan format 2 baris terpisah: '• *<TICKER> (<Latest Price>)*: P/E ... | PBV ... | RSI ... | SMA20 ...' diikuti baris '  👉 *Aksi:* ...', dipisahkan 1 baris kosong antar saham).",
+        "Output HANYA teks brief sesuai template berikut:",
         "",
         BRIEF_TEMPLATE.format(date=fmt_brief_date(now)),
         "",
@@ -632,7 +675,8 @@ def enforce_brief_format(text: str, header: str) -> str:
 # --------------------------------------------------------------------------- #
 def build_fallback_brief(header: str, macro: dict[str, dict[str, Any]],
                          stocks: list[dict[str, Any]],
-                         headlines: dict[str, list[dict[str, Any]]]) -> str:
+                         headlines: dict[str, list[dict[str, Any]]],
+                         flows: dict[str, float] | None = None) -> str:
     ihsg, fx = macro.get("IHSG", {}), macro.get("USD/IDR", {})
     parts = [
         header,
@@ -642,29 +686,48 @@ def build_fallback_brief(header: str, macro: dict[str, dict[str, Any]],
         "*Makro & Pasar:*",
         f"• *IHSG:* {fmt_index(ihsg.get('close'))} ({fmt_pct(ihsg.get('change_pct'))})",
         f"• *USD/IDR:* {fmt_rp(fx.get('close'))} ({fmt_pct(fx.get('change_pct'))})",
-        "",
-        "*Analisis Watchlist (Fundamental & Teknikal):*",
     ]
+    if flows:
+        flow_parts = [f"{sec} ({fmt_pct(pct)})" for sec, pct in sorted(flows.items(), key=lambda kv: kv[1], reverse=True)]
+        parts.append(f"• *Likuiditas:* " + ", ".join(flow_parts))
+
+    if flows and stocks:
+        top_sector = max(flows.items(), key=lambda kv: kv[1])[0]
+        sector_stocks = [s for s in stocks if s.get("sector") == top_sector]
+        pick = sector_stocks[0]["ticker"] if sector_stocks else stocks[0]["ticker"]
+        parts += [
+            "",
+            "*Rekomendasi Sektor:*",
+            f"📊 *{top_sector} ({pick}):* Arus volume paling bertahan ({fmt_pct(flows[top_sector])}). Pantau area target beli/jual watchlist.",
+        ]
+
+    top = [item for items in headlines.values() for item in items[:2]]
+    if top:
+        parts += ["", "*Katalis Saham:*"]
+        for i in top[:3]:
+            parts.append(f"• *{escape_md(i['source'])}:* {escape_md(i['title'])}")
+
+    parts += ["", "*Analisis Watchlist (Teknikal & Valuasi):*"]
     if stocks:
+        watchlist_blocks = []
         for s in stocks:
             rsi_txt = f"{s['rsi']:.1f}" if is_num(s.get("rsi")) else "N/A"
             sma_txt = fmt_rp(s.get("sma"))
             pe_txt = f"{s['pe']:.1f}x" if is_num(s.get("pe")) else "N/A"
             pbv_txt = f"{s['pbv']:.2f}x" if is_num(s.get("pbv")) else "N/A"
-            vol_diff_txt = fmt_pct(s.get("vol_diff_pct"))
+            buy_txt = fmt_rp(s.get("buy_below"))
+            sell_txt = fmt_rp(s.get("sell_above"))
+            sl_txt = fmt_rp(s.get("stop_loss")) if s.get("stop_loss") else "N/A"
 
-            parts.append(
-                f"- *{s['ticker']} ({fmt_rp(s.get('close'))})*: {fmt_pct(s.get('change_pct'))} | "
-                f"RSI: {rsi_txt}, SMA20: {sma_txt} | P/E: {pe_txt}, PBV: {pbv_txt} | "
-                f"Vol 2W: {vol_diff_txt}"
+            block = (
+                f"• *{s['ticker']} ({fmt_rp(s.get('close'))})*: P/E {pe_txt} | PBV {pbv_txt} | RSI {rsi_txt} | SMA20 {sma_txt}\n"
+                f"  👉 *Aksi:* Beli < {buy_txt} (TP: {sell_txt} | SL: {sl_txt})"
             )
+            watchlist_blocks.append(block)
+        parts.append("\n\n".join(watchlist_blocks))
     else:
         parts.append("- Data watchlist tidak tersedia.")
 
-    top = [item for items in headlines.values() for item in items[:2]]
-    if top:
-        parts += ["", "*Berita Utama Terkini:*"]
-        parts += [f"- {escape_md(i['source'])}: {escape_md(i['title'])}" for i in top]
     return "\n".join(parts)
 
 
@@ -786,7 +849,7 @@ def main() -> int:
         log.error("GEMINI_API_KEY is not set - sending data-only fallback brief.")
 
     if not brief:
-        brief = build_fallback_brief(header, macro, stock_data, headlines)
+        brief = build_fallback_brief(header, macro, stock_data, headlines, flows=flows)
     if dividends:
         brief = f"{brief}\n\n{format_dividend_radar(dividends)}"
 
