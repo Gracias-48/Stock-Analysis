@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "description": "Personal IDX watchlist. Tickers are stored WITHOUT the .JK suffix; the engines append it automatically for Yahoo Finance.",
+    "currency": "IDR",
+    "thresholds_basis": "Defaults calibrated on Oct 10, 2026 closes (~8-10% below / ~10-12% above last price, aligned to IDX tick sizes). Adjust to your own plan.",
+    "rsi_oversold": 30
+  },
+  "stocks": [
+    {
+      "ticker": "BBRI",
+      "name": "Bank Rakyat Indonesia (Persero) Tbk",
+      "sector": "Banking",
+      "buy_below": 2850,
+      "sell_above": 3450
+    },
+    {
+      "ticker": "ANTM",
+      "name": "Aneka Tambang Tbk",
+      "sector": "Metals & Mining",
+      "buy_below": 2900,
+      "sell_above": 3500
+    },
+    {
+      "ticker": "MDKA",
+      "name": "Merdeka Copper Gold Tbk",
+      "sector": "Metals & Mining",
+      "buy_below": 2650,
+      "sell_above": 3250
+    },
+    {
+      "ticker": "DSSA",
+      "name": "Dian Swastatika Sentosa Tbk",
+      "sector": "Energy & Infrastructure",
+      "buy_below": 1000,
+      "sell_above": 1250
+    },
+    {
+      "ticker": "CUAN",
+      "name": "Petrindo Jaya Kreasi Tbk",
+      "sector": "Energy (Coal & Mining)",
+      "buy_below": 680,
+      "sell_above": 900
+    },
+    {
+      "ticker": "DEWA",
+      "name": "Darma Henwa Tbk",
+      "sector": "Energy (Coal & Mining)",
+      "buy_below": 334,
+      "sell_above": 420
+    }
+  ]
+}

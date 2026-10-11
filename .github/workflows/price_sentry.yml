@@ -1,0 +1,78 @@
+name: Price Sentry
+
+on:
+  schedule:
+    # Every 15 min, 02:00-09:59 UTC (09:00-16:59 WIB), Monday-Friday.
+    # Exact IDX session windows (incl. lunch / Friday-prayer breaks) are enforced in code.
+    - cron: "*/15 2-9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Bypass the market-hours and stale-data guards"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Print alerts to the job log instead of sending them to Telegram"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: price-sentry
+  cancel-in-progress: false
+
+jobs:
+  sentry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Jakarta
+      FORCE_RUN: ${{ inputs.force_run && '1' || '0' }}
+      DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Stdlib-only gate: skips the dependency install entirely outside IDX sessions.
+      - name: Check IDX market hours
+        id: gate
+        run: python price_sentry.py --check-market
+
+      - name: Install dependencies
+        if: steps.gate.outputs.open == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Runners are ephemeral: persist today's de-dup log between runs via the Actions cache.
+      # Keys are date-scoped, so a new trading day always starts with a clean log.
+      - name: Restore today's alert log
+        if: steps.gate.outputs.open == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: daily_alerts.log
+          key: daily-alerts-${{ steps.gate.outputs.today }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            daily-alerts-${{ steps.gate.outputs.today }}-
+
+      - name: Run price sentry
+        if: steps.gate.outputs.open == 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python price_sentry.py
+
+      - name: Save alert log
+        if: always() && steps.gate.outputs.open == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: daily_alerts.log
+          key: daily-alerts-${{ steps.gate.outputs.today }}-${{ github.run_id }}-${{ github.run_attempt }}

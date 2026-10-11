@@ -1,0 +1,11 @@
+# Runtime state (persisted via GitHub Actions cache, never committed)
+daily_alerts.log
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

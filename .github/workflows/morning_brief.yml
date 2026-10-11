@@ -1,0 +1,48 @@
+name: Morning Brief
+
+on:
+  schedule:
+    # 08:30 WIB = 01:30 UTC, Monday-Friday
+    - cron: "30 1 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the brief to the job log instead of sending it to Telegram"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: morning-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Jakarta
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate and send morning brief
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: python morning_brief.py
