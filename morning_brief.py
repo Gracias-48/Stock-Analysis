@@ -8,19 +8,20 @@ Pipeline
 2. Pull last closes for IHSG (^JKSE), USD/IDR (IDR=X) and every watchlist stock.
 3. Compute a 2-week volume differential per stock
    (current 5-day average volume vs. the previous 5-day average volume).
-4. Ask Gemini (google-genai SDK, gemini-2.5-flash) for a 3-part brief:
-   Macro & Momentum / Recommendation / Key Catalysts.
+4. Ask Gemini (google-genai SDK, gemini-3.8-flash with gemini-3.1-pro-preview as
+   fallback) for a 3-part brief: Macro & Momentum / Recommendation / Key Catalysts.
 5. Deliver the brief to Telegram.
 
 Schedule: 08:30 WIB (01:30 UTC), Monday-Friday, via GitHub Actions.
 
 Environment variables
 ---------------------
-BOT_TOKEN       Telegram bot token                       (required)
-CHAT_ID         Telegram chat ID                         (required)
-GEMINI_API_KEY  Google Gemini API key                    (required for AI brief)
-GEMINI_MODEL    Override model name (default: gemini-2.5-flash)
-DRY_RUN         "1" -> print the brief instead of sending it to Telegram
+BOT_TOKEN              Telegram bot token        (required)
+CHAT_ID                Telegram chat ID          (required)
+GEMINI_API_KEY         Google Gemini API key     (required for AI brief)
+GEMINI_MODEL           Primary model             (default: gemini-3.8-flash)
+GEMINI_FALLBACK_MODEL  Fallback model            (default: gemini-3.1-pro-preview; "none" disables)
+DRY_RUN                "1" -> print the brief instead of sending it to Telegram
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ import requests
 # pyrefly: ignore [missing-import]
 import yfinance as yf
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 # --------------------------------------------------------------------------- #
@@ -53,7 +55,9 @@ WIB = timezone(timedelta(hours=7), name="WIB")
 BASE_DIR = Path(__file__).resolve().parent
 WATCHLIST_PATH = BASE_DIR / "watchlist.json"
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# `or` (not a getenv default) so an empty GitHub Actions variable still falls back.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.8-flash"
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "").strip() or "gemini-3.1-pro-preview"
 HEADLINES_PER_SOURCE = 5
 VOLUME_WINDOW = 5                # 5-day MA vs previous 5-day MA = 2 trading weeks
 DIVIDEND_HORIZON_DAYS = 14
@@ -502,29 +506,48 @@ def build_prompt(now: datetime, macro: dict[str, dict[str, Any]],
     return "\n".join(lines)
 
 
+def gemini_models() -> list[str]:
+    """Primary model first, then the fallback (deduplicated, 'none' disables it)."""
+    models = [GEMINI_MODEL]
+    if GEMINI_FALLBACK_MODEL.lower() != "none" and GEMINI_FALLBACK_MODEL not in models:
+        models.append(GEMINI_FALLBACK_MODEL)
+    return models
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Retry rate limits / server errors; fail fast on other 4xx (bad model id, bad key)."""
+    if isinstance(exc, genai_errors.ClientError):
+        return getattr(exc, "code", None) == 429
+    return True
+
+
 def synthesize_brief(prompt: str, api_key: str, attempts: int = 3) -> str:
     client = genai.Client(api_key=api_key)
-    config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_INSTRUCTION,
-        temperature=0.4,
-    )
+    # Temperature intentionally left at the model default: Gemini 3 models are tuned
+    # for it, and lowering it can degrade output (e.g. looping).
+    config = types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION)
+
     last_exc: Exception | None = None
-    for attempt in range(1, attempts + 1):
-        try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL, contents=prompt, config=config
-            )
-            text = (response.text or "").strip()
-            if text:
-                log.info("Gemini (%s) brief generated on attempt %d.", GEMINI_MODEL, attempt)
-                return text
-            raise RuntimeError("Gemini returned an empty response")
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            log.warning("Gemini attempt %d/%d failed: %s", attempt, attempts, exc)
-            if attempt < attempts:
-                time.sleep(5 * attempt)
-    raise RuntimeError(f"Gemini synthesis failed after {attempts} attempts") from last_exc
+    for model in gemini_models():
+        for attempt in range(1, attempts + 1):
+            try:
+                response = client.models.generate_content(
+                    model=model, contents=prompt, config=config
+                )
+                text = (response.text or "").strip()
+                if text:
+                    log.info("Gemini (%s) brief generated on attempt %d.", model, attempt)
+                    return text
+                raise RuntimeError("Gemini returned an empty response")
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                log.warning("Gemini %s attempt %d/%d failed: %s", model, attempt, attempts, exc)
+                if not _is_retryable(exc):
+                    break                       # e.g. 404 model not found -> next model
+                if attempt < attempts:
+                    time.sleep(5 * attempt)
+        log.warning("Gemini model %s exhausted - trying next model if available.", model)
+    raise RuntimeError(f"Gemini synthesis failed on {gemini_models()}") from last_exc
 
 
 def sanitize_markdown(text: str) -> str:

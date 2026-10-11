@@ -34,7 +34,7 @@ The architecture is designed to be fully serverless, relying on **GitHub Actions
     2.  Fetch last closing prices for the watchlist, `^JKSE` (IHSG), and `IDR=X` (USD/IDR).
     3.  Calculate a 2-week volume differential (current 5-day moving average volume vs. previous 5-day moving average volume) using `yfinance` history.
 *   **AI Synthesis Task:**
-    *   Pass the aggregated data to Gemini (model: `gemini-2.5-flash`).
+    *   Pass the aggregated data to Gemini (model: `gemini-3.8-flash`, falling back to `gemini-3.1-pro-preview` if the primary model fails).
     *   Prompt the AI to output a 3-part brief: (1) Macro & Momentum, (2) Explicit Sector Recommendation, and (3) Key Catalysts for the user's specific stocks.
 *   **Output:** Send the generated text to the Telegram API.
 

@@ -4,4 +4,4 @@ pandas>=2.3.2,<3          # pandas-ta 0.4.x is validated against pandas 2.3.x
 pandas-ta==0.4.71b0       # exact pin: pre-release builds are only installed when pinned
 feedparser>=6.0.11,<7
 requests>=2.32,<3
-google-genai>=1.0.0       # official SDK: `from google import genai`
+google-genai>=2.0.0       # official SDK: `from google import genai` (Gemini 3.x models)

@@ -44,5 +44,9 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Optional repo variables (Settings -> Variables). Empty = code defaults:
+          # gemini-3.8-flash, falling back to gemini-3.1-pro-preview.
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_FALLBACK_MODEL: ${{ vars.GEMINI_FALLBACK_MODEL }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python morning_brief.py

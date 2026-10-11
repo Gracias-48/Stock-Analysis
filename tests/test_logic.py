@@ -126,5 +126,57 @@ class MorningBriefFormatTest(unittest.TestCase):
         self.assertTrue(all(len(c) <= mb.TELEGRAM_MAX_LEN for c in chunks))
 
 
+class GeminiFallbackTest(unittest.TestCase):
+    """Mocked client - verifies model order, fast-fail on 4xx, and fallback."""
+
+    @staticmethod
+    def _client_error(code: int) -> Exception:
+        return mb.genai_errors.ClientError(code, {"error": {"code": code, "message": "x", "status": "X"}})
+
+    def _run(self, side_effects: list) -> tuple[str | Exception, list[str]]:
+        from unittest import mock
+
+        calls: list[str] = []
+        effects = iter(side_effects)
+
+        def fake_generate(model: str, contents: str, config: object) -> object:
+            calls.append(model)
+            effect = next(effects)
+            if isinstance(effect, Exception):
+                raise effect
+            return mock.Mock(text=effect)
+
+        client = mock.Mock()
+        client.models.generate_content.side_effect = fake_generate
+        with mock.patch.object(mb.genai, "Client", return_value=client), \
+                mock.patch.object(mb.time, "sleep"):
+            try:
+                result: str | Exception = mb.synthesize_brief("prompt", "key")
+            except Exception as exc:  # noqa: BLE001
+                result = exc
+        return result, calls
+
+    def test_defaults(self) -> None:
+        self.assertEqual(mb.gemini_models(), ["gemini-3.8-flash", "gemini-3.1-pro-preview"])
+
+    def test_primary_success(self) -> None:
+        result, calls = self._run(["brief"])
+        self.assertEqual((result, calls), ("brief", ["gemini-3.8-flash"]))
+
+    def test_404_skips_straight_to_fallback(self) -> None:
+        result, calls = self._run([self._client_error(404), "pro brief"])
+        self.assertEqual(result, "pro brief")
+        self.assertEqual(calls, ["gemini-3.8-flash", "gemini-3.1-pro-preview"])
+
+    def test_429_is_retried_on_same_model(self) -> None:
+        result, calls = self._run([self._client_error(429), "brief"])
+        self.assertEqual((result, calls), ("brief", ["gemini-3.8-flash", "gemini-3.8-flash"]))
+
+    def test_all_models_failing_raises(self) -> None:
+        result, calls = self._run([self._client_error(403), self._client_error(403)])
+        self.assertIsInstance(result, RuntimeError)
+        self.assertEqual(len(calls), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

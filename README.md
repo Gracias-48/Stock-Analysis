@@ -32,7 +32,10 @@ requirements.txt                   Python 3.12+ dependencies
    | `CHAT_ID` | Telegram chat ID |
    | `GEMINI_API_KEY` | Gemini API key |
 
-4. Push the repo. Both workflows start on their cron schedules automatically.
+4. *(Optional)* Gemini models: the brief uses `gemini-3.8-flash` and falls back to `gemini-3.1-pro-preview`.
+   To override either one without editing code, add repository **variables** (not secrets) named
+   `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`. Set the fallback to `none` to disable it.
+5. Push the repo. Both workflows start on their cron schedules automatically.
 
 ## Manual testing
 
