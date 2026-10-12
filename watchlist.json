@@ -53,6 +53,38 @@
       "buy_below": 360,
       "sell_above": 400,
       "stop_loss": 315
+    },
+    {
+      "ticker": "ADRO",
+      "name": "Adaro Energy Indonesia Tbk",
+      "sector": "Energy (Coal & Mining)",
+      "buy_below": 2350,
+      "sell_above": 2750,
+      "stop_loss": 2250
+    },
+    {
+      "ticker": "BUMI",
+      "name": "Bumi Resources Tbk",
+      "sector": "Energy (Coal & Mining)",
+      "buy_below": 155,
+      "sell_above": 188,
+      "stop_loss": 148
+    },
+    {
+      "ticker": "PGAS",
+      "name": "Perusahaan Gas Negara Tbk",
+      "sector": "Energy & Infrastructure",
+      "buy_below": 1300,
+      "sell_above": 1520,
+      "stop_loss": 1240
+    },
+    {
+      "ticker": "TLKM",
+      "name": "Telkom Indonesia (Persero) Tbk",
+      "sector": "Telecommunication",
+      "buy_below": 2150,
+      "sell_above": 2500,
+      "stop_loss": 2050
     }
   ]
 }

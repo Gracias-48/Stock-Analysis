@@ -68,6 +68,11 @@ SESSION_GRACE_MINUTES = int(os.getenv("SESSION_GRACE_MINUTES", "10") or 10)
 SESSIONS_MON_THU = ((dtime(9, 0), dtime(12, 0)), (dtime(13, 30), dtime(15, 49)))
 SESSIONS_FRI = ((dtime(9, 0), dtime(11, 30)), (dtime(14, 0), dtime(15, 49)))
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
