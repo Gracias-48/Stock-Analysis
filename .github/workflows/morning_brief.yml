@@ -3,7 +3,7 @@ name: Morning Brief
 on:
   schedule:
     # 08:30 WIB = 01:30 UTC, Monday-Friday
-    - cron: "25 1 * * 1-5"
+    - cron: "6 4 * * 1-5"
   workflow_dispatch:
     inputs:
       dry_run:
