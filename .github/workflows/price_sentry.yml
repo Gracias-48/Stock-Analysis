@@ -1,10 +1,6 @@
 name: Price Sentry
 
 on:
-  schedule:
-    # Every 15 min, 02:00-09:59 UTC (09:00-16:59 WIB), Monday-Friday.
-    # Exact IDX session windows (incl. lunch / Friday-prayer breaks) are enforced in code.
-    - cron: "*/15 2-9 * * 1-5"
   workflow_dispatch:
     inputs:
       force_run:
