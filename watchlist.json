@@ -18,9 +18,9 @@
       "ticker": "ANTM",
       "name": "Aneka Tambang Tbk",
       "sector": "Metals & Mining",
-      "buy_below": 3190,
-      "sell_above": 3500,
-      "stop_loss": 2950
+      "buy_below": 0,
+      "sell_above": 3450,
+      "stop_loss": 2980
     },
     {
       "ticker": "MDKA",
@@ -42,9 +42,9 @@
       "ticker": "CUAN",
       "name": "Petrindo Jaya Kreasi Tbk",
       "sector": "Energy (Coal & Mining)",
-      "buy_below": 680,
-      "sell_above": 900,
-      "stop_loss": 620
+      "buy_below": 0,
+      "sell_above": 750,
+      "stop_loss": 640
     },
     {
       "ticker": "DEWA",
