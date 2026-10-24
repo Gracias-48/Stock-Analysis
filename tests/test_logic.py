@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import morning_brief as mb  # noqa: E402
 import price_sentry as ps  # noqa: E402
+import deep_agent as da  # noqa: E402
 
 
 class AlertRulesTest(unittest.TestCase):
@@ -111,49 +112,39 @@ class MorningBriefFormatTest(unittest.TestCase):
     def test_prompt_contains_formatted_data(self) -> None:
         now = datetime(2026, 10, 12, 8, 30, tzinfo=mb.WIB)
         macro = {
-            "IHSG": {"close": 6093.76, "change_pct": 1.04, "as_of": "2026-10-09"},
+            "IHSG": {"close": 6093.76, "change_pct": 1.04, "as_of": "2026-10-09", "vol_ma": 2.1e8, "vol_ma_prev": 2.3e8, "vol_diff_pct": -7.5},
             "USD/IDR": {"close": 17875.0, "change_pct": 0.38, "as_of": "2026-10-09"},
+            "Gold (Emas)": {"close": 2650.5, "change_pct": 0.8},
+            "Crude Oil (WTI)": {"close": 71.5, "change_pct": -1.2},
         }
-        stocks = [{
-            "ticker": "BBRI", "sector": "Banking", "name": "BRI", "close": 3100.0,
-            "change_pct": 2.31, "buy_below": 2850, "sell_above": 3450,
-            "vol_ma": 2.1e8, "vol_ma_prev": 2.3e8, "vol_diff_pct": -7.5,
-            "rsi": 45.4, "sma": 3189.0, "pe": 7.6, "pbv": 1.45,
-        }]
+        flows = {"Perbankan": 12.5, "Energi & Batubara": -8.0}
         headlines = {
             "Kontan": [{"source": "Kontan", "title": "Rupiah melemah", "summary": "", "published": None}],
             "CNBC Indonesia": [],
         }
-        prompt = mb.build_prompt(now, macro, stocks, mb.sector_volume_flows(stocks), headlines, [])
+        prompt = mb.build_prompt(now, macro, flows, headlines)
 
-        for needle in ("6,093.76", "Rp 17,875", "Rp 3,100", "Morning Briefing - 12 Okt 2026",
+        for needle in ("6,093.76", "Rp 17,875", "$2,650.50", "$71.50", "Morning Briefing - 12 Okt 2026",
                        "(feed tidak tersedia)", "WAKTU SAAT INI: Senin",
-                       "Technical -> RSI: 45.4, SMA20: Rp 3,189",
-                       "Fundamental -> P/E: 7.6x, PBV: 1.45x",
-                       "*Rekomendasi Sektor:*", "*Katalis Saham:*",
-                       "*Analisis Watchlist (Teknikal & Valuasi):*"):
+                       "*Makro & Pasar Global:*", "*Radar Berita & Katalis Utama Hari Ini:*",
+                       "*Rotasi & Rekomendasi Sektor Unggulan:*", "/analyze <TICKER>"):
             self.assertIn(needle, prompt)
 
     def test_fallback_brief_structure(self) -> None:
         macro = {
-            "IHSG": {"close": 6093.76, "change_pct": 1.04},
+            "IHSG": {"close": 6093.76, "change_pct": 1.04, "vol_diff_pct": -9.0},
             "USD/IDR": {"close": 17875.0, "change_pct": 0.38},
+            "Gold (Emas)": {"close": 2650.0, "change_pct": 0.5},
+            "Crude Oil (WTI)": {"close": 72.0, "change_pct": -0.8},
         }
-        stocks = [{
-            "ticker": "BBRI", "sector": "Banking", "name": "BRI", "close": 3100.0,
-            "change_pct": 2.31, "buy_below": 2850, "sell_above": 3450, "stop_loss": 2700,
-            "rsi": 45.4, "sma": 3189.0, "pe": 7.6, "pbv": 1.45, "vol_diff_pct": -7.5,
-        }]
         headlines = {"Kontan": [{"source": "Kontan", "title": "Rupiah Menguat", "summary": ""}]}
-        flows = {"Banking": -7.5}
-        fallback = mb.build_fallback_brief(self.HEADER, macro, stocks, headlines, flows=flows)
+        flows = {"Perbankan": 12.5}
+        fallback = mb.build_fallback_brief(self.HEADER, macro, headlines, flows=flows)
 
-        self.assertIn("*Makro & Pasar:*", fallback)
-        self.assertIn("*Rekomendasi Sektor:*", fallback)
-        self.assertIn("*Katalis Saham:*", fallback)
-        self.assertIn("*Analisis Watchlist (Teknikal & Valuasi):*", fallback)
-        self.assertIn("• *BBRI (Rp 3,100)*: P/E 7.6x | PBV 1.45x | RSI 45.4 | SMA20 Rp 3,189", fallback)
-        self.assertIn("👉 *Aksi:* Beli < Rp 2,850 (TP: Rp 3,450 | SL: Rp 2,700)", fallback)
+        self.assertIn("*Makro & Pasar Global:*", fallback)
+        self.assertIn("*Radar Berita & Katalis Utama Hari Ini:*", fallback)
+        self.assertIn("*Rotasi & Rekomendasi Sektor Unggulan:*", fallback)
+        self.assertIn("/analyze <TICKER>", fallback)
 
     def test_model_output_sanitized_for_telegram(self) -> None:
         raw = "## Morning brief\n**Makro & Pasar:**\n• *IHSG:* 6.093 naik.\n\n\n* **BBRI:** laba solid\n```\nx\n```"
@@ -221,6 +212,114 @@ class GeminiFallbackTest(unittest.TestCase):
         result, calls = self._run([self._client_error(403), self._client_error(403)])
         self.assertIsInstance(result, RuntimeError)
         self.assertEqual(len(calls), 2)
+
+
+class DeepAgentTest(unittest.TestCase):
+    def test_normalize_ticker(self) -> None:
+        self.assertEqual(da.normalize_ticker("bbri"), ("BBRI", "BBRI.JK"))
+        self.assertEqual(da.normalize_ticker("ANTM.JK"), ("ANTM", "ANTM.JK"))
+        self.assertEqual(da.normalize_ticker("  asii  "), ("ASII", "ASII.JK"))
+
+    def test_pydantic_models(self) -> None:
+        plan = da.TraderPlan(
+            action="Akumulasi Beli",
+            entry_range="Rp 3.000 - Rp 3.080",
+            target_price=3500.0,
+            stop_loss=2850.0,
+            risk_reward_ratio=2.33,
+            key_catalyst="Katalis dividen dan pertumbuhan kredit UMKM.",
+            primary_risk="Risiko NPL jika daya beli melambat."
+        )
+        self.assertEqual(plan.action, "Akumulasi Beli")
+        self.assertEqual(plan.target_price, 3500.0)
+        self.assertEqual(plan.stop_loss, 2850.0)
+        self.assertAlmostEqual(plan.risk_reward_ratio, 2.33)
+
+        decision = da.PortfolioDecision(
+            rating="OVERWEIGHT",
+            time_horizon="2-6 minggu (Swing Trade)",
+            allocation_advice="Alokasi 5-8% dari total portofolio saham",
+            strategic_summary="Secara fundamental solid dengan valuasi atraktif."
+        )
+        self.assertEqual(decision.rating, "OVERWEIGHT")
+        self.assertEqual(decision.time_horizon, "2-6 minggu (Swing Trade)")
+
+    def test_graph_compilation(self) -> None:
+        graph = da.build_deep_agent_graph()
+        self.assertIsNotNone(graph)
+        nodes = graph.nodes
+        for expected in ("technical_analyst", "fundamentals_analyst", "news_analyst",
+                         "volume_flow_analyst", "researcher_debate", "trader_proposal",
+                         "portfolio_manager", "report_assembler"):
+            self.assertIn(expected, nodes)
+
+    def test_report_assembler_node(self) -> None:
+        sample_state: da.AgentState = {
+            "ticker": "BBRI",
+            "symbol": "BBRI.JK",
+            "company_name": "Bank Rakyat Indonesia",
+            "sector": "Keuangan (Financials)",
+            "technical": {
+                "price": 3100.0,
+                "change_1d": 1.5,
+                "change_5d": 3.0,
+                "sma_20": 3050.0,
+                "sma_50": 3000.0,
+                "sma_200": 3200.0,
+                "ema_10": 3080.0,
+                "rsi_14": 52.0,
+                "atr_14": 80.0,
+                "high_52w": 4000.0,
+                "low_52w": 2800.0,
+            },
+            "fundamentals": {
+                "pe": 8.5,
+                "pbv": 1.8,
+                "roe": 21.0,
+                "der": 1.1,
+                "div_yield": 5.5,
+            },
+            "volume_flow": {
+                "vol_ratio_20d": 1.33,
+                "flow_diagnosis": "🟢 Akumulasi Kuat",
+            },
+            "news": [
+                {"title": "BBRI Catatkan Kinerja Positif Kuartal Ini", "link": "https://example.com"}
+            ],
+            "bull_thesis": "Argumen bull yang solid.",
+            "bear_thesis": "Argumen bear yang waspada.",
+            "trader_plan": {
+                "action": "Akumulasi Beli",
+                "entry_range": "Rp 3.050 - Rp 3.100",
+                "target_price": 3300.0,
+                "stop_loss": 2950.0,
+                "risk_reward_ratio": 1.33,
+                "key_catalyst": "Katalis laba solid",
+                "primary_risk": "Risiko perlambatan kredit",
+            },
+            "portfolio_decision": {
+                "rating": "OVERWEIGHT",
+                "time_horizon": "2-6 minggu",
+                "allocation_advice": "5-8%",
+                "strategic_summary": "Disarankan akumulasi bertahap.",
+            },
+        }
+
+        result = da.report_assembler_node(sample_state)
+        report = result["report_text"]
+        self.assertIn("DEEP-DIVE STOCK INTELLIGENCE: BBRI", report)
+        self.assertIn("Snapshot Harga:", report)
+        self.assertIn("Katalis Berita Terkini:", report)
+        self.assertIn("Bull Researcher Thesis", report)
+        self.assertIn("Bear Researcher Thesis", report)
+        self.assertIn("Rencana Perdagangan (Trader Plan):", report)
+        self.assertIn("Keputusan Akhir Portfolio Manager:", report)
+
+    def test_split_message(self) -> None:
+        long_text = "Baris uji coba telegram.\n" * 300
+        chunks = da.split_message(long_text, limit=1000)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(c) <= 1000 for c in chunks))
 
 
 if __name__ == "__main__":

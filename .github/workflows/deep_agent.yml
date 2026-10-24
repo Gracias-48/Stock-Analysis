@@ -1,0 +1,54 @@
+name: Deep Multi-Agent Stock Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "IDX Stock Ticker (e.g. BBRI, ANTM, ASII, BMRI)"
+        required: true
+        type: string
+        default: "BBRI"
+      dry_run:
+        description: "Print report to console instead of sending to Telegram"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-agent-${{ inputs.ticker }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Jakarta
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Deep Multi-Agent Analysis
+        env:
+          TARGET_TICKER: ${{ inputs.ticker }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_FALLBACK_MODEL: ${{ vars.GEMINI_FALLBACK_MODEL }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: python deep_agent.py

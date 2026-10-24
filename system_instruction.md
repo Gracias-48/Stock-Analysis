@@ -1,115 +1,73 @@
-# System Instructions: Dual-Engine IDX Stock Tracker
+# System Instructions: Triple-Engine IDX Stock Intelligence System
 
 ## 1. Project Overview
-Build a "Personal Autonomous Stock Intelligence & Alert System" for the Indonesia Stock Exchange (IDX). The system monitors a personal watchlist, synthesizes Indonesian financial news using the Google Gemini API, and sends alerts via Telegram.
+Build a "Personal Autonomous Stock Intelligence & Multi-Agent Alert System" for the Indonesia Stock Exchange (IDX).
+The architecture operates on a **Triple-Engine** framework inspired by `TauricResearch/TradingAgents`:
 
-The system relies on three files:
-1. `watchlist.json`: A static configuration file storing stock tickers, targets, and sectors.
-2. `morning_brief.py`: An AI-driven summarization engine.
-3. `price_sentry.py`: An intraday technical and price-level monitoring engine.
+1. **Engine 1 - Macro & Sector Catalyst Radar (`morning_brief.py`):**
+   Runs pre-market (08:25 WIB, Mon–Fri). Independent of `watchlist.json`, synthesizes broad macro trends (IHSG, USD/IDR, Gold, Crude Oil), IDX sector liquidity flows (5D vs 20D), top financial headlines, and sector recommendations with an action tip to analyze specific tickers via `/analyze <TICKER>`.
+2. **Engine 2 - Intraday Price & Risk Sentry (`price_sentry.py`):**
+   Runs every 15 minutes during IDX market hours. Monitors user-configured price levels (`buy_below`, `sell_above`, `stop_loss`) and technical extremes (RSI < 30) from `watchlist.json` with stateful daily de-duplication.
+3. **Engine 3 - On-Demand Multi-Agent Deep Analyzer (`deep_agent.py`):**
+   Triggered on-demand via Telegram chat command `/analyze <TICKER>` (via Cloudflare Worker) or GitHub Actions `workflow_dispatch`. Executes a LangGraph-orchestrated team of agents (4 Parallel Analysts, Bull vs Bear Researcher Debate, Research Manager & Trader Proposal with Pydantic, and Risk Management / Portfolio Manager 5-Tier Decision) to deliver an institutional deep-dive report.
 
-The architecture is designed to be fully serverless, relying on **GitHub Actions** cron jobs for execution. No database is required; state is managed via a temporary daily log file.
+---
 
 ## 2. Dependencies & API Setup
-*   **Python Version:** 3.10+
-*   **Required Packages:** `yfinance`, `pandas`, `pandas-ta`, `feedparser`, `requests`, `google-genai`.
-    *   *Critical Note on Gemini:* Use the current `google-genai` SDK, **not** the legacy `google-generativeai` package. Initialize the client using `from google import genai` and `client = genai.Client(api_key=GEMINI_API_KEY)`.
-*   **API Keys (Passed via Environment Variables):**
-    *   `BOT_TOKEN`: Telegram Bot Token.
-    *   `CHAT_ID`: Telegram Chat ID.
-    *   `GEMINI_API_KEY`: Google Gemini API key.
+* **Python Version:** 3.12+
+* **Required Packages:** `yfinance`, `pandas`, `pandas-ta`, `feedparser`, `requests`, `google-genai`, `langgraph`, `pydantic`.
+* **API Keys (Passed via Environment Variables):**
+  * `BOT_TOKEN`: Telegram Bot Token.
+  * `CHAT_ID`: Telegram Chat ID.
+  * `GEMINI_API_KEY`: Google Gemini API key.
+  * `TARGET_TICKER`: Target stock ticker for `deep_agent.py` (e.g. `BBRI`).
+
+---
 
 ## 3. Data Formatting Rules
-*   **IDX Tickers:** All stock symbols must be appended with `.JK` for Yahoo Finance compatibility (e.g., `BBRI.JK`).
-*   **Currency & Time:** Format all currency as Indonesian Rupiah with thousand separators (e.g., `Rp 4,500`). Use WIB (UTC+7) for time context in prompts.
-*   **Telegram Markdown:** Use strict, clean Markdown for Telegram payloads. Use emojis heavily for visual scanning (🚨, 🎯, 📉).
+* **IDX Tickers:** All stock symbols must be appended with `.JK` for Yahoo Finance compatibility (e.g., `BBRI.JK`), while displayed cleanly without `.JK` in user-facing reports.
+* **Currency & Time:** Format IDR as Rupiah with thousand separators (e.g., `Rp 3,100`). Format USD where appropriate (`$2,650`). Use WIB (UTC+7) context for market hours.
+* **Telegram Markdown:** Use strict, clean legacy Markdown for Telegram payloads. Use standard emojis as visual tags (🌅, 🚨, 🎯, 🛑, 📉, 📊, 🐂, 🐻, ⚖️).
+
+---
 
 ## 4. `morning_brief.py` Specifications
-**Trigger Schedule:** 08:30 WIB (01:30 UTC), Monday–Friday.
-**Objective:** Deliver an AI-synthesized pre-market brief.
+**Trigger Schedule:** 08:25 WIB (01:25 UTC), Monday–Friday.
+**Objective:** Deliver an AI-synthesized macro & sector catalyst radar.
 
-*   **Data Aggregation Tasks:**
-    1.  **RSS Feed Discovery:** Please research and find the best, most current active RSS feed URLs for top Indonesian financial news portals (specifically target **Kontan**, **CNBC Indonesia**, and **Bisnis.com**). Parse these feeds to extract the top 5 latest headlines from each.
-        *   *(Note: Implement a `try-except` block when parsing feeds so the script does not crash if one of your chosen URLs is temporarily down).*
-    2.  Fetch last closing prices for the watchlist, `^JKSE` (IHSG), and `IDR=X` (USD/IDR).
-    3.  Calculate a 2-week volume differential (current 5-day moving average volume vs. previous 5-day moving average volume) using `yfinance` history.
-*   **AI Synthesis Task:**
-    *   Pass the aggregated data to Gemini (model: `gemini-3.8-flash`, falling back to `gemini-3.1-pro-preview` if the primary model fails).
-    *   Prompt the AI to output a 3-part brief: (1) Macro & Momentum, (2) Explicit Sector Recommendation, and (3) Key Catalysts for the user's specific stocks.
-*   **Output:** Send the generated text to the Telegram API.
+* **Data Aggregation:**
+  1. Top headlines from Kontan, CNBC Indonesia, and Bisnis.com RSS feeds.
+  2. Macro data: IHSG (`^JKSE`), USD/IDR (`IDR=X`), Gold (`GC=F`), Crude Oil (`CL=F`).
+  3. Aggregate Sector Liquidity Flows across key IDX sector leader proxies (5D vs 20D volume differential).
+* **AI Synthesis Output (3 Sections):**
+  1. `*Makro & Pasar Global:*` (IHSG, USD/IDR, Emas, Minyak, Likuiditas Sektoral)
+  2. `*Radar Berita & Katalis Utama Hari Ini:*` (3-5 poin berita terpanas)
+  3. `*Rotasi & Rekomendasi Sektor Unggulan:*` (Sektor unggulan, 2-3 saham leader, serta ajakan bertindak `/analyze <TICKER>`)
+
+---
 
 ## 5. `price_sentry.py` Specifications
-**Trigger Schedule:** Every 15 minutes during IDX regular trading hours:
-*   Morning Session: 09:00 - 12:00 WIB (02:00 - 05:00 UTC)
-*   Afternoon Session: 13:30 - 15:49 WIB (06:30 - 08:49 UTC)
-*   *(Configure cron to run `*/15 2-9 * * 1-5` and handle breaks in code if desired).*
+**Trigger Schedule:** Every 15 minutes during IDX sessions:
+* Morning Session: 09:00 - 12:00 WIB (Mon–Fri)
+* Afternoon Session: 13:30 - 15:49 WIB (Mon–Thu) / 14:00 - 15:49 WIB (Fri)
+**Objective:** Actionable intraday threshold alerts (`buy_below`, `sell_above`, `stop_loss`, RSI oversold).
+**State Management:** De-duplicates alerts using `daily_alerts.log` persisted via GitHub Actions cache.
 
-**Objective:** Send actionable alerts without spamming the user.
+---
 
-*   **Logic Tasks:**
-    1.  Fetch 60 days of historical data via `yfinance` to calculate a 14-period RSI and 20-period SMA using `pandas_ta`.
-    2.  Check current price against the `buy_below` and `sell_above` values in `watchlist.json`.
-    3.  Check if RSI is `< 30` (Oversold).
-*   **State Management (De-duplication):**
-    *   To prevent spam, maintain a local text file (`daily_alerts.log`).
-    *   Format: `YYYY-MM-DD|TICKER_ALERTTYPE` (e.g., `2026-10-12|ANTM.JK_price_buy`).
-    *   Before sending an alert, check if that exact ticker and alert type has already fired today. If it has, skip it. If the date in the file is not today, clear the file.
-*   **Output:** Send a short Telegram alert if conditions are met.
-
-***
-
-# Brand Guidelines: Telegram Alert Styling
-
-When programming the output strings and the Gemini prompt instructions, enforce the following visual style for Telegram messages.
-
-## 1. Tone and Voice
-*   **Objective, Institutional, Concise.** No fluff, greetings, or conversational filler.
-*   **Action-Oriented.** Tell the user exactly what threshold was breached or what the AI recommends.
-
-## 2. Visual Hierarchy & Emojis
-Use standard emojis as visual tags so the user can identify the alert type from the lock screen.
-
-*   **Morning Brief:** 🌅 `*Morning Briefing*`
-*   **Buy Alert:** 🚨 `*BUY ALERT: [TICKER]*`
-*   **Sell Alert:** 🎯 `*SELL ALERT: [TICKER]*`
-*   **Stop Loss:** 🛑 `*STOP LOSS ALERT: [TICKER]*`
-*   **Technical/Oversold:** 📉 `*TECHNICAL ALERT: [TICKER]*`
-*   **Dividend/Corporate:** 💰 `*DIVIDEND RADAR*`
-
-## 3. Spacing and Formatting
-*   Use `*` for bolding key metrics and ticker names.
-*   Separate distinct thoughts with line breaks.
-*   Do not use code blocks (```) for regular text as they wrap poorly on mobile.
-
-## 4. Example Output Templates
-
-**Price Sentry Template (Buy):**
-> 🚨 *BUY ALERT: ANTM*
-> Price dropped to Rp 1,290 
-> (Target: < Rp 1,300)
-
-**Price Sentry Template (Stop Loss):**
-> 🛑 *STOP LOSS ALERT: ANTM*
-> Price dropped to Rp 2,740 
-> (Stop Loss: < Rp 2,750)
-
-**Technical Sentry Template:**
-> 📉 *TECHNICAL ALERT: MDKA OVERSOLD*
-> RSI is currently at 28.4.
-> Price is Rp 2,150. Consider looking for entry setups.
-
-**Morning Brief Template Requirements:**
-Ensure the Gemini prompt strictly demands this format (Bahasa Indonesia, tidy bullets, scannable for mobile):
-> 🌅 *Morning Briefing - 12 Okt 2026*
-> 
-> *Makro & Pasar:*
-> • *IHSG:* 6.093,76 (+1,04%) | Rebound teknikal, volume 5D turun tipis (-9,0%)
-> • *USD/IDR:* Rp 17.875 (+0,38%) — Rupiah tertekan, menopang margin eksportir komoditas namun membebani sektor berbasis impor.
-> • *Likuiditas:* Arus dana bertahan di Perbankan (-7,5%), volume Tambang/Nikel mengering (-46,5%).
-> 
-> *Rekomendasi Sektor:*
-> 🏦 *Perbankan (BBRI)* — Akumulasi bertahap. Prospek laba bersih Q3 solid. Harga saat ini (Rp 3.100) masih berada di rentang akumulasi aman menuju target jual Rp 3.450.
-> 
-> *Katalis Saham:*
-> - *BBRI:* Proyeksi pertumbuhan laba bersih Q3 solid, mengimbangi sentimen risiko kredit perbankan.
-> - *ANTM:* Penyesuaian harga emas fisik di Pegadaian; volume perdagangan terkoreksi -39%.
+## 6. `deep_agent.py` Specifications (TradingAgents Multi-Agent)
+**Trigger:** On-demand via `/analyze <TICKER>` or GitHub Actions `workflow_dispatch`.
+**Architecture (LangGraph `StateGraph`):**
+1. **4 Parallel Analysts:**
+   - *Technical Analyst:* Price, 1D/5D change, SMA(20, 50, 200), EMA(10), RSI(14), MACD, ATR(14), 52-week High/Low distance.
+   - *Fundamentals Analyst:* P/E, PBV (with USD currency normalization for miners/energy), ROE, DER, Dividend Yield, Revenue & Net Income growth.
+   - *News Analyst:* Emitent-specific RSS news + macro IHSG context.
+   - *Volume & Flow Analyst:* Anomaly volume ratio (last day vs 5D and 20D MA), accumulation/distribution indication.
+2. **Researcher Debate:**
+   - *Bull Researcher:* Strongest evidence-based thesis (catalysts, valuation, momentum).
+   - *Bear Researcher:* Strongest counter-thesis (downside risk, valuation trap, debt, resistance).
+3. **Research Manager & Trader Proposal:**
+   - Mediates debate and creates concrete plan: Entry Buy range, Take Profit (TP), Stop Loss (SL) based on support/resistance and ATR volatility. Reads `watchlist.json` if available.
+4. **Risk Management & Portfolio Manager Final Decision:**
+   - 5-Tier Rating Scale: `Buy`, `Overweight`, `Hold`, `Underweight`, `Sell`.
+5. **Telegram Delivery:** Formats and sends executive report (< 4000 chars per message chunk).

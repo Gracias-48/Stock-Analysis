@@ -5,3 +5,5 @@ pandas-ta==0.4.71b0       # exact pin: pre-release builds are only installed whe
 feedparser>=6.0.11,<7
 requests>=2.32,<3
 google-genai>=2.0.0       # official SDK: `from google import genai` (Gemini 3.x models)
+pydantic>=2.7.0,<3
+langgraph>=1.0.0,<2
